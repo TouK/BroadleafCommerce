@@ -33,8 +33,9 @@ import org.broadleafcommerce.core.catalog.domain.ProductOption;
 import org.broadleafcommerce.core.catalog.domain.ProductOptionValue;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.domain.SkuFee;
+import org.broadleafcommerce.core.catalog.domain.dto.AssignedProductOptionDTO;
 import org.broadleafcommerce.core.catalog.service.type.ProductType;
-import org.broadleafcommerce.core.search.domain.ProductSearchCriteria;
+import org.broadleafcommerce.core.search.domain.SearchCriteria;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,6 +68,11 @@ public class CatalogServiceImpl implements CatalogService {
     public Product findProductById(Long productId) {
         return productDao.readProductById(productId);
     }
+    
+    @Override
+    public Product findProductByExternalId(String externalId) {
+        return productDao.readProductByExternalId(externalId);
+    }
 
     @Override
     public List<Product> findProductsByName(String searchName) {
@@ -84,12 +90,12 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     @Override
-    public List<Product> findFilteredActiveProductsByCategory(Category category, ProductSearchCriteria searchCriteria) {
+    public List<Product> findFilteredActiveProductsByCategory(Category category, SearchCriteria searchCriteria) {
         return productDao.readFilteredActiveProductsByCategory(category.getId(), searchCriteria);
     }
 
     @Override
-    public List<Product> findFilteredActiveProductsByQuery(String query, ProductSearchCriteria searchCriteria) {
+    public List<Product> findFilteredActiveProductsByQuery(String query, SearchCriteria searchCriteria) {
         return productDao.readFilteredActiveProductsByQuery(query, searchCriteria);
     }
 
@@ -106,13 +112,13 @@ public class CatalogServiceImpl implements CatalogService {
     
     @Override
     @Deprecated
-    public List<Product> findFilteredActiveProductsByCategory(Category category, Date currentDate, ProductSearchCriteria searchCriteria) {
+    public List<Product> findFilteredActiveProductsByCategory(Category category, Date currentDate, SearchCriteria searchCriteria) {
         return productDao.readFilteredActiveProductsByCategory(category.getId(), currentDate, searchCriteria);
     }
     
     @Override
     @Deprecated
-    public List<Product> findFilteredActiveProductsByQuery(String query, Date currentDate, ProductSearchCriteria searchCriteria) {
+    public List<Product> findFilteredActiveProductsByQuery(String query, Date currentDate, SearchCriteria searchCriteria) {
         return productDao.readFilteredActiveProductsByQuery(query, currentDate, searchCriteria);
     }
 
@@ -141,6 +147,11 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     @Override
+    public Category findCategoryByExternalId(String externalId) {
+        return categoryDao.readCategoryByExternalId(externalId);
+    }
+
+    @Override
     @Deprecated
     public Category findCategoryByName(String categoryName) {
         return categoryDao.readCategoryByName(categoryName);
@@ -166,6 +177,12 @@ public class CatalogServiceImpl implements CatalogService {
     @Transactional("blTransactionManager")
     public void removeCategory(Category category){
         categoryDao.delete(category);
+    }
+    
+    @Override
+    @Transactional("blTransactionManager")
+    public void removeSku(Sku sku) {
+        skuDao.delete(sku);
     }
 
     @Override
@@ -230,6 +247,16 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     @Override
+    public Sku findSkuByExternalId(String externalId) {
+        return skuDao.readSkuByExternalId(externalId);
+    }
+
+    @Override
+    public Sku findSkuByUpc(String upc) {
+        return skuDao.readSkuByUpc(upc);
+    }
+
+    @Override
     @Transactional("blTransactionManager")
     public Sku saveSku(Sku sku) {
         return skuDao.save(sku);
@@ -243,7 +270,7 @@ public class CatalogServiceImpl implements CatalogService {
     
     @Override
     public List<Sku> findSkusByIds(List<Long> ids) {
-        return skuDao.readSkusById(ids);
+        return skuDao.readSkusByIds(ids);
     }
 
     public void setProductDao(ProductDao productDao) {
@@ -360,4 +387,41 @@ public class CatalogServiceImpl implements CatalogService {
         }
     }
     
+    @Override
+    public Sku findSkuByURI(String uri) {
+        if (extensionManager != null) {
+            ExtensionResultHolder holder = new ExtensionResultHolder();
+            ExtensionResultStatusType result = extensionManager.getProxy().findSkuByURI(uri, holder);
+            if (ExtensionResultStatusType.HANDLED.equals(result)) {
+                return (Sku) holder.getResult();
+            }
+        }
+        List<Sku> skus = skuDao.findSkuByURI(uri);
+        if (skus == null || skus.size() == 0) {
+            return null;
+        } else if (skus.size() == 1) {
+            return skus.get(0);
+        } else {
+            // First check for a direct hit on the url
+            for(Sku sku : skus) {
+                if (uri.equals(sku.getProduct().getUrl() + sku.getUrlKey())) {
+                    return sku;
+                }
+            }
+            
+            // Otherwise, return the first product
+            return skus.get(0);
+        }
+    }
+
+    @Override
+    public List<AssignedProductOptionDTO> findAssignedProductOptionsByProductId(Long productId) {
+        return productOptionDao.findAssignedProductOptionsByProductId(productId);
+    }
+
+    @Override
+    public List<AssignedProductOptionDTO> findAssignedProductOptionsByProduct(Product product) {
+        return productOptionDao.findAssignedProductOptionsByProduct(product);
+    }
+
 }

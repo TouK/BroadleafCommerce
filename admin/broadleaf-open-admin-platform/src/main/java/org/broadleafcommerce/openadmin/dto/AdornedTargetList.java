@@ -42,6 +42,7 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
     private Boolean inverse = Boolean.FALSE;
     private String joinEntityClass;
     private Boolean mutable = true;
+    private String idProperty;
     
     public AdornedTargetList() {
         //do nothing
@@ -163,12 +164,40 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
         this.joinEntityClass = joinEntityClass;
     }
 
+    public String getIdProperty() {
+        return idProperty;
+    }
+
+    public void setIdProperty(String idProperty) {
+        this.idProperty = idProperty;
+    }
+
     public Boolean getMutable() {
         return mutable;
     }
 
     public void setMutable(Boolean mutable) {
         this.mutable = mutable;
+    }
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("AdornedTargetList{");
+        sb.append("collectionFieldName='").append(collectionFieldName).append('\'');
+        sb.append(", linkedObjectPath='").append(linkedObjectPath).append('\'');
+        sb.append(", targetObjectPath='").append(targetObjectPath).append('\'');
+        sb.append(", adornedTargetEntityClassname='").append(adornedTargetEntityClassname).append('\'');
+        sb.append(", adornedTargetEntityPolymorphicType='").append(adornedTargetEntityPolymorphicType).append('\'');
+        sb.append(", sortField='").append(sortField).append('\'');
+        sb.append(", sortAscending=").append(sortAscending);
+        sb.append(", linkedIdProperty='").append(linkedIdProperty).append('\'');
+        sb.append(", targetIdProperty='").append(targetIdProperty).append('\'');
+        sb.append(", inverse=").append(inverse);
+        sb.append(", joinEntityClass='").append(joinEntityClass).append('\'');
+        sb.append(", idProperty='").append(idProperty).append('\'');
+        sb.append(", mutable=").append(mutable);
+        sb.append('}');
+        return sb.toString();
     }
 
     @Override
@@ -185,6 +214,7 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
         adornedTargetList.targetIdProperty = targetIdProperty;
         adornedTargetList.inverse = inverse;
         adornedTargetList.joinEntityClass = joinEntityClass;
+        adornedTargetList.idProperty = idProperty;
         adornedTargetList.mutable = mutable;
 
         return adornedTargetList;
@@ -193,7 +223,8 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof AdornedTargetList)) return false;
+        if (o == null) return false;
+        if (!getClass().isAssignableFrom(o.getClass())) return false;
 
         AdornedTargetList that = (AdornedTargetList) o;
 
@@ -217,6 +248,8 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
             return false;
         if (joinEntityClass != null ? !joinEntityClass.equals(that.joinEntityClass) : that.joinEntityClass != null)
             return false;
+        if (idProperty != null ? !idProperty.equals(that.idProperty) : that.idProperty != null)
+            return false;
         if (mutable != null ? !mutable.equals(that.mutable) : that.mutable != null)
             return false;
 
@@ -236,6 +269,7 @@ public class AdornedTargetList implements PersistencePerspectiveItem {
         result = 31 * result + (targetIdProperty != null ? targetIdProperty.hashCode() : 0);
         result = 31 * result + (inverse != null ? inverse.hashCode() : 0);
         result = 31 * result + (joinEntityClass != null ? joinEntityClass.hashCode() : 0);
+        result = 31 * result + (idProperty != null ? idProperty.hashCode() : 0);
         result = 31 * result + (mutable != null ? mutable.hashCode() : 0);
         return result;
     }

@@ -26,6 +26,7 @@ import org.broadleafcommerce.openadmin.dto.BasicFieldMetadata;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.FieldMetadata;
 import org.broadleafcommerce.openadmin.dto.Property;
+import org.broadleafcommerce.openadmin.server.security.service.RowLevelSecurityService;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceException;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.BasicPersistenceModule;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldNotAvailableException;
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import javax.annotation.Nullable;
 import javax.annotation.Resource;
 
 
@@ -60,8 +62,11 @@ public class EntityValidatorServiceImpl implements EntityValidatorService, Appli
     
     protected ApplicationContext applicationContext;
 
+    @Resource(name = "blRowLevelSecurityService")
+    protected RowLevelSecurityService securityService;
+    
     @Override
-    public void validate(Entity submittedEntity, Serializable instance, Map<String, FieldMetadata> propertiesMetadata,
+    public void validate(Entity submittedEntity, @Nullable Serializable instance, Map<String, FieldMetadata> propertiesMetadata,
             RecordHelper recordHelper, boolean validateUnsubmittedProperties) {
         Object idValue = null;
         if (instance != null) {
@@ -76,30 +81,43 @@ public class EntityValidatorServiceImpl implements EntityValidatorService, Appli
             }
         }
         Entity entity;
+        boolean isUpdateRequest;
         if (idValue == null) {
             //This is for an add, or if the instance variable is null (e.g. PageTemplateCustomPersistenceHandler)
             entity = submittedEntity;
+            isUpdateRequest = false;
         } else {
-            //This is for an update, as the submittedEntity instance will likely only contain the dirty properties
-            entity = recordHelper.getRecord(propertiesMetadata, instance, null, null);
-            //acquire any missing properties not harvested from the instance and add to the entity. A use case for this
-            //would be the confirmation field for a password validation
-            for (Map.Entry<String, FieldMetadata> entry : propertiesMetadata.entrySet()) {
-                if (entity.findProperty(entry.getKey()) == null) {
-                    Property myProperty = submittedEntity.findProperty(entry.getKey());
-                    if (myProperty != null) {
-                        entity.addProperty(myProperty);
+            if (validateUnsubmittedProperties) {
+                //This is for an update, as the submittedEntity instance will likely only contain the dirty properties
+                entity = recordHelper.getRecord(propertiesMetadata, instance, null, null);
+                //acquire any missing properties not harvested from the instance and add to the entity. A use case for this
+                //would be the confirmation field for a password validation
+                for (Map.Entry<String, FieldMetadata> entry : propertiesMetadata.entrySet()) {
+                    if (entity.findProperty(entry.getKey()) == null) {
+                        Property myProperty = submittedEntity.findProperty(entry.getKey());
+                        if (myProperty != null) {
+                            entity.addProperty(myProperty);
+                        }
+                    } else if (submittedEntity.findProperty(entry.getKey()) != null) {
+                        // Set the dirty state of the property
+                        entity.findProperty(entry.getKey()).setIsDirty(submittedEntity.findProperty(entry.getKey()).getIsDirty());
                     }
                 }
+            } else {
+                entity = submittedEntity;
             }
+            isUpdateRequest = true;
         }
+            
         List<String> types = getTypeHierarchy(entity);
         //validate each individual property according to their validation configuration
         for (Entry<String, FieldMetadata> metadataEntry : propertiesMetadata.entrySet()) {
             FieldMetadata metadata = metadataEntry.getValue();
 
             //Don't test this field if it was not inherited from our polymorphic type (or supertype)
-            if (types.contains(metadata.getInheritedFromType())) {
+            if (instance != null && (types.contains(metadata.getInheritedFromType())
+                    || instance.getClass().getName().equals(metadata.getInheritedFromType()))) {
+                
                 Property property = entity.getPMap().get(metadataEntry.getKey());
 
                 // This property should be set to false only in the case where we are adding a member to a collection
@@ -166,7 +184,9 @@ public class EntityValidatorServiceImpl implements EntityValidatorService, Appli
                                                                         propertyName,
                                                                         propertyValue);
                         if (!result.isValid()) {
-                            submittedEntity.addValidationError(propertyName, result.getErrorMessage());
+                            for (String message : result.getErrorMessages()) {
+                                submittedEntity.addValidationError(propertyName, message);
+                            }
                         }
                     }
                 }
@@ -174,6 +194,18 @@ public class EntityValidatorServiceImpl implements EntityValidatorService, Appli
         }
     }
 
+    /**
+     * <p>
+     * Returns the type hierarchy of the given <b>entity</b> in ascending order of type, stopping at Object
+     * 
+     * <p>
+     * For instance, if this entity's {@link Entity#getType()} is {@link ProductBundleImpl}, then the result will be:
+     * 
+     * [org.broadleafcommerce.core.catalog.domain.ProductBundleImpl, org.broadleafcommerce.core.catalog.domain.ProductImpl]
+     * 
+     * @param entity
+     * @return
+     */
     protected List<String> getTypeHierarchy(Entity entity) {
         List<String> types = new ArrayList<String>();
         Class<?> myType;

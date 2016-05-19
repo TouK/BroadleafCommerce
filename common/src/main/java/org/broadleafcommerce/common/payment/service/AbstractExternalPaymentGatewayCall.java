@@ -31,7 +31,7 @@ import org.broadleafcommerce.common.vendor.service.type.ServiceStatusType;
  * communicateWithVendor(), and getFailureReportingThreshold();</p>
  *
  * <p>The generic Type 'T' represents the payment request object that is going to be sent to the external gateway.
- * The generic Type 'R' reprenents the payment result object that will be returned</p>
+ * The generic Type 'R' represents the payment result object that will be returned</p>
  *
  * <p>This allows anyone using the framework to configure the ServiceMonitor AOP hooks
  * and detect any outages to provide (email/logging) feedback when necessary.</p>
@@ -42,17 +42,17 @@ import org.broadleafcommerce.common.vendor.service.type.ServiceStatusType;
  *
  * @author Elbert Bautista (elbertbautista)
  */
-public abstract class AbstractExternalPaymentGatewayCall<T,R> implements ServiceStatusDetectable<T> {
+public abstract class AbstractExternalPaymentGatewayCall<T, R> implements ServiceStatusDetectable<T>, FailureCountExposable {
 
     protected Integer failureCount = 0;
     protected Boolean isUp = true;
 
-    protected synchronized void clearStatus() {
+    public synchronized void clearStatus() {
         isUp = true;
         failureCount = 0;
     }
 
-    protected synchronized void incrementFailure() {
+    public synchronized void incrementFailure() {
         if (failureCount >= getFailureReportingThreshold()) {
             isUp = false;
         } else {

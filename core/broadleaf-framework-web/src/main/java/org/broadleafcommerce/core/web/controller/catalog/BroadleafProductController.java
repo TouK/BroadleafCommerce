@@ -19,6 +19,10 @@
  */
 package org.broadleafcommerce.core.web.controller.catalog;
 
+import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.extension.ExtensionResultHolder;
+import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
+import org.broadleafcommerce.common.template.TemplateOverrideExtensionManager;
 import org.broadleafcommerce.common.template.TemplateType;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.TemplateTypeAware;
@@ -26,7 +30,6 @@ import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
 import org.broadleafcommerce.common.web.deeplink.DeepLinkService;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.web.catalog.ProductHandlerMapping;
-import org.hibernate.tool.hbm2x.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.servlet.ModelAndView;
@@ -35,11 +38,12 @@ import org.springframework.web.servlet.mvc.Controller;
 import java.util.HashSet;
 import java.util.Set;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 /**
- * This class works in combination with the CategoryHandlerMapping which finds a category based upon
+ * This class works in combination with the ProductHandlerMapping which finds a product based upon
  * the passed in URL.
  *
  * @author bpolster
@@ -53,6 +57,9 @@ public class BroadleafProductController extends BroadleafAbstractController impl
     @Autowired(required = false)
     @Qualifier("blProductDeepLinkService")
     protected DeepLinkService<Product> deepLinkService;
+    
+    @Resource(name = "blTemplateOverrideExtensionManager")
+    protected TemplateOverrideExtensionManager templateOverrideManager;
 
     @Override
     public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
@@ -64,14 +71,28 @@ public class BroadleafProductController extends BroadleafAbstractController impl
         Set<Product> allProductsSet = new HashSet<Product>();
         allProductsSet.add(product);
         model.addObject(ALL_PRODUCTS_ATTRIBUTE_NAME, new HashSet<Product>(allProductsSet));
+        model.addObject("BLC_PAGE_TYPE", "product");
 
         addDeepLink(model, deepLinkService, product);
+        
+        String templatePath = null;
 
-        if (StringUtils.isNotEmpty(product.getDisplayTemplate())) {
-            model.setViewName(product.getDisplayTemplate());    
+        // Use the products custom template if available
+        if (StringUtils.isNotBlank(product.getDisplayTemplate())) {
+            templatePath = product.getDisplayTemplate();
         } else {
-            model.setViewName(getDefaultProductView());
+            // Otherwise, use the controller default.
+            templatePath = getDefaultProductView();
         }
+
+        // Allow extension managers to override.
+        ExtensionResultHolder<String> erh = new ExtensionResultHolder<String>();
+        ExtensionResultStatusType extResult = templateOverrideManager.getProxy().getOverrideTemplate(erh, product);
+        if (extResult != ExtensionResultStatusType.NOT_HANDLED) {
+            templatePath = erh.getResult();
+        }
+        
+        model.setViewName(templatePath);
         return model;
     }
 

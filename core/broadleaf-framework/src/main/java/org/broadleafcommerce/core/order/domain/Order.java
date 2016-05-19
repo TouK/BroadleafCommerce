@@ -20,6 +20,7 @@
 package org.broadleafcommerce.core.order.domain;
 
 import org.broadleafcommerce.common.audit.Auditable;
+import org.broadleafcommerce.common.copy.MultiTenantCloneable;
 import org.broadleafcommerce.common.currency.domain.BroadleafCurrency;
 import org.broadleafcommerce.common.locale.domain.Locale;
 import org.broadleafcommerce.common.money.Money;
@@ -59,7 +60,7 @@ import java.util.Map;
  * 
  * 5.  Order shipping (e.g. fulfillment) are represented with Fulfillment objects.
  */
-public interface Order extends Serializable {
+public interface Order extends Serializable, MultiTenantCloneable<Order> {
 
     Long getId();
 
@@ -129,7 +130,14 @@ public interface Order extends Serializable {
 
     /**
      * This is getTotal() minus the sum of all the {@link OrderPayment} already applied to this order.
-     * For example, Gift Cards, Account Credit, or any Third Party Order Payment that can be applied BEFORE
+     * An applied payment can be of any type that does NOT have to be the final payment on the order.
+     * In this implementation, THIRD_PARTY_ACCOUNT and CREDIT_CARD type payments
+     * must be sent to the gateway as the last step in the checkout process and will NOT be considered an applied payment.
+     * Since, these types have to be the last payment applied,
+     * {@link org.broadleafcommerce.core.pricing.service.workflow.AdjustOrderPaymentsActivity} will adjust the value of the payment
+     * based on what has already been applied to the order.
+     *
+     * For example, Gift Cards and Account Credit can be applied BEFORE
      * a final payment (e.g. most Credit Card Gateways) is applied. This {@link OrderPayment} does not
      * necessarily have to be confirmed (i.e. captured), as it will happen on callback of the final payment
      * and will be captured in the checkout workflow.

@@ -35,6 +35,10 @@ import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 
+/**
+ * @deprecated - use {@link org.broadleafcommerce.profile.core.domain.CountrySubdivision} instead.
+ */
+@Deprecated
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
 @Table(name = "BLC_STATE")
@@ -97,7 +101,7 @@ public class StateImpl implements State {
             return true;
         if (obj == null)
             return false;
-        if (getClass() != obj.getClass())
+        if (!getClass().isAssignableFrom(obj.getClass()))
             return false;
         StateImpl other = (StateImpl) obj;
         if (abbreviation == null) {

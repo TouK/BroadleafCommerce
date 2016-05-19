@@ -23,6 +23,7 @@ package org.broadleafcommerce.openadmin.web.form.component;
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.util.BLCMessageUtils;
 import org.broadleafcommerce.openadmin.web.form.entity.Field;
+import org.codehaus.jettison.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,11 +34,13 @@ public class ListGridRecord {
 
     protected ListGrid listGrid;
     protected String id;
+    protected String altId;
     protected List<Field> fields = new ArrayList<Field>();
     protected List<Field> hiddenFields = new ArrayList<Field>();
     protected Boolean isDirty;
     protected Boolean isError;
     protected String errorKey;
+    protected String errorMessage;
     protected ListGridRecordIcon icon;
 
     /**
@@ -46,7 +49,11 @@ public class ListGridRecord {
     protected Map<String, Field> fieldMap;
     
     public String getPath() {
-        return listGrid.getPath() + "/" + id;
+        String path = listGrid.getPath() + "/" + id;
+        if (!StringUtils.isEmpty(altId)) {
+            path += "/" + altId;
+        }
+        return path;
     }
     
     public boolean getCanLinkToExternalEntity() {
@@ -139,9 +146,9 @@ public class ListGridRecord {
         for (int j=0;j<hiddenFields.size();j++) {
             sb.append("{\"name\":\"");
             sb.append(hiddenFields.get(j).getName());
-            sb.append("\",\"val\":\"");
-            sb.append(hiddenFields.get(j).getValue());
-            sb.append("\"}");
+            sb.append("\",\"val\":");
+            sb.append(JSONObject.quote(hiddenFields.get(j).getValue()));
+            sb.append("}");
             if (j < hiddenFields.size()-1) {
                 sb.append(",");
             }
@@ -175,21 +182,45 @@ public class ListGridRecord {
         this.errorKey = errorKey;
     }
     
+    /**
+     * Actual, localized error message.  If set, this will override the error key.
+     * @return
+     */
+    public String getErrorMessage() {
+        return this.errorMessage;
+    }
+
+    /**
+     * If set, this will override the errorKey.
+     * 
+     * @param errorMessage
+     */
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
+    }
+
     public ListGridRecordIcon getIcon() {
         if (icon != null) {
             return icon;
         }
         
         if (getIsError()) {
+            String msgToUser = getErrorMessage();
+            if (msgToUser == null) {
+                msgToUser = BLCMessageUtils.getMessage(getErrorKey());
+            }
+
             return new ListGridRecordIcon()
                 .withCssClass("icon-exclamation-sign")
-                .withMessage(BLCMessageUtils.getMessage(getErrorKey()));
+                .withMessage(msgToUser)
+                .withHasDetails(true);
         }
 
         if (getIsDirty()) {
             return new ListGridRecordIcon()
                 .withCssClass("icon-pencil")
-                .withMessage(BLCMessageUtils.getMessage("listgrid.record.edited"));
+                .withMessage(BLCMessageUtils.getMessage("listgrid.record.edited"))
+                .withHasDetails(false);
         }
         
         return null;
@@ -201,6 +232,14 @@ public class ListGridRecord {
     
     public Boolean getHasIcon() {
         return icon != null || getIsError() || getIsDirty();
+    }
+    
+    public String getAltId() {
+        return altId;
+    }
+
+    public void setAltId(String altId) {
+        this.altId = altId;
     }
     
 }

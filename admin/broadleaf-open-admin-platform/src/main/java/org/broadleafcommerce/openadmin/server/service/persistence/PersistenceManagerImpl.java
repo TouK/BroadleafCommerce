@@ -30,6 +30,7 @@ import org.broadleafcommerce.common.exception.NoPossibleResultsException;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.common.presentation.client.OperationType;
+import org.broadleafcommerce.common.util.ValidationUtil;
 import org.broadleafcommerce.openadmin.dto.BasicFieldMetadata;
 import org.broadleafcommerce.openadmin.dto.ClassMetadata;
 import org.broadleafcommerce.openadmin.dto.CriteriaTransferObject;
@@ -51,7 +52,6 @@ import org.broadleafcommerce.openadmin.server.service.persistence.module.Inspect
 import org.broadleafcommerce.openadmin.server.service.persistence.module.PersistenceModule;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.RecordHelper;
 import org.broadleafcommerce.openadmin.web.form.entity.DynamicEntityFormInfo;
-import org.broadleafcommerce.openadmin.web.form.entity.Field;
 import org.hibernate.mapping.PersistentClass;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -132,27 +132,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
 
     @Override
     public Class<?>[] getUpDownInheritance(Class<?> testClass) {
-        Class<?>[] pEntities = dynamicEntityDao.getAllPolymorphicEntitiesFromCeiling(testClass);
-        if (ArrayUtils.isEmpty(pEntities)) {
-            return pEntities;
-        }
-        Class<?> topConcreteClass = pEntities[pEntities.length - 1];
-        List<Class<?>> temp = new ArrayList<Class<?>>(pEntities.length);
-        temp.addAll(Arrays.asList(pEntities));
-        Collections.reverse(temp);
-        boolean eof = false;
-        while (!eof) {
-            Class<?> superClass = topConcreteClass.getSuperclass();
-            PersistentClass persistentClass = dynamicEntityDao.getPersistentClass(superClass.getName());
-            if (persistentClass == null) {
-                eof = true;
-            } else {
-                temp.add(0, superClass);
-                topConcreteClass = superClass;
-            }
-        }
-
-        return temp.toArray(new Class<?>[temp.size()]);
+        return dynamicEntityDao.getUpDownInheritance(testClass);
     }
 
     @Override
@@ -175,24 +155,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
         for (PersistenceModule module : modules) {
             module.extractProperties(entities, mergedProperties, propertiesList);
         }
-        /*
-         * Insert inherited fields whose order has been specified
-         */
-        for (int i = 0; i < entities.length - 1; i++) {
-            for (Property myProperty : propertiesList) {
-                if (myProperty.getMetadata().getInheritedFromType().equals(entities[i].getName()) && myProperty.getMetadata().getOrder() != null) {
-                    for (Property property : propertiesList) {
-                        if (!property.getMetadata().getInheritedFromType().equals(entities[i].getName()) && property.getMetadata().getOrder() != null && property.getMetadata().getOrder() >= myProperty.getMetadata().getOrder()) {
-                            if (property.getMetadata().getAdditionalMetadata() == null 
-                                    || property.getMetadata().getAdditionalMetadata().get(Field.ALTERNATE_ORDERING) == null
-                                    || ((Boolean) property.getMetadata().getAdditionalMetadata().get(Field.ALTERNATE_ORDERING)) == false) {
-                                property.getMetadata().setOrder(property.getMetadata().getOrder() + 1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+
         Property[] properties = new Property[propertiesList.size()];
         properties = propertiesList.toArray(properties);
         Arrays.sort(properties, new Comparator<Property>() {
@@ -446,17 +409,19 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
             
             //Build up validation errors in all of the subpackages, even those that might not have thrown ValidationExceptions
             for (Map.Entry<String, PersistencePackage> subPackage : persistencePackage.getSubPackages().entrySet()) {
-                for (Map.Entry<String, List<String>> error : subPackage.getValue().getEntity().getValidationErrors().entrySet()) {
+                for (Map.Entry<String, List<String>> error : subPackage.getValue().getEntity().getPropertyValidationErrors().entrySet()) {
                     subPackageValidationErrors.put(subPackage.getKey() + DynamicEntityFormInfo.FIELD_SEPARATOR + error.getKey(), error.getValue());
                 }
             }
             
-            response.getValidationErrors().putAll(subPackageValidationErrors);
+            response.getPropertyValidationErrors().putAll(subPackageValidationErrors);
         }
 
         if (response.isValidationFailure()) {
             PersistenceResponse validationResponse = executeValidationProcessors(persistencePackage, new PersistenceResponse().withEntity(response));
-            throw new ValidationException(validationResponse.getEntity(), "The entity has failed validation");
+            Entity entity = validationResponse.getEntity();
+            String message = ValidationUtil.buildErrorMessage(entity.getPropertyValidationErrors(), entity.getGlobalValidationErrors());
+            throw new ValidationException(entity, message);
         }
 
         return executePostAddHandlers(persistencePackage, new PersistenceResponse().withEntity(response));
@@ -586,16 +551,18 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
         
         //Build up validation errors in all of the subpackages, even those that might not have thrown ValidationExceptions
         for (Map.Entry<String, PersistencePackage> subPackage : persistencePackage.getSubPackages().entrySet()) {
-            for (Map.Entry<String, List<String>> error : subPackage.getValue().getEntity().getValidationErrors().entrySet()) {
+            for (Map.Entry<String, List<String>> error : subPackage.getValue().getEntity().getPropertyValidationErrors().entrySet()) {
                 subPackageValidationErrors.put(subPackage.getKey() + DynamicEntityFormInfo.FIELD_SEPARATOR + error.getKey(), error.getValue());
             }
         }
 
-        response.getValidationErrors().putAll(subPackageValidationErrors);
+        response.getPropertyValidationErrors().putAll(subPackageValidationErrors);
 
         if (response.isValidationFailure()) {
             PersistenceResponse validationResponse = executeValidationProcessors(persistencePackage, new PersistenceResponse().withEntity(response));
-            throw new ValidationException(validationResponse.getEntity(), "The entity has failed validation");
+            Entity entity = validationResponse.getEntity();
+            String message = ValidationUtil.buildErrorMessage(entity.getPropertyValidationErrors(), entity.getGlobalValidationErrors());
+            throw new ValidationException(entity, message);
         }
 
         return executePostUpdateHandlers(persistencePackage, new PersistenceResponse().withEntity(response));

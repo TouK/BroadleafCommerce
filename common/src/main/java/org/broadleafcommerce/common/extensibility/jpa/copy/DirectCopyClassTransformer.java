@@ -19,6 +19,31 @@
  */
 package org.broadleafcommerce.common.extensibility.jpa.copy;
 
+import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.extensibility.jpa.convert.BroadleafClassTransformer;
+import org.broadleafcommerce.common.logging.LifeCycleEvent;
+import org.broadleafcommerce.common.logging.SupportLogManager;
+import org.broadleafcommerce.common.logging.SupportLogger;
+import org.broadleafcommerce.common.weave.ConditionalDirectCopyTransformMemberDto;
+import org.broadleafcommerce.common.weave.ConditionalDirectCopyTransformersManager;
+
+import java.io.ByteArrayInputStream;
+import java.lang.instrument.IllegalClassFormatException;
+import java.security.ProtectionDomain;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+
+import javax.annotation.Resource;
+import javax.persistence.EntityListeners;
+
 import javassist.ClassPool;
 import javassist.CtClass;
 import javassist.CtConstructor;
@@ -36,28 +61,6 @@ import javassist.bytecode.annotation.BooleanMemberValue;
 import javassist.bytecode.annotation.MemberValue;
 import javassist.bytecode.annotation.StringMemberValue;
 
-import org.apache.commons.lang3.StringUtils;
-import org.broadleafcommerce.common.extensibility.jpa.convert.BroadleafClassTransformer;
-import org.broadleafcommerce.common.logging.LifeCycleEvent;
-import org.broadleafcommerce.common.logging.SupportLogManager;
-import org.broadleafcommerce.common.logging.SupportLogger;
-
-import java.io.ByteArrayInputStream;
-import java.lang.instrument.IllegalClassFormatException;
-import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-
-import javax.annotation.Resource;
-import javax.persistence.EntityListeners;
-
 /**
  * This class transformer will copy fields, methods, and interface definitions from a source class to a target class,
  * based on the xformTemplates map. It will fail if it encounters any duplicate definitions.
@@ -65,7 +68,7 @@ import javax.persistence.EntityListeners;
  * @author Andre Azzolini (apazzolini)
  * @author Jeff Fischer
  */
-public class DirectCopyClassTransformer implements BroadleafClassTransformer {
+public class DirectCopyClassTransformer extends AbstractClassTransformer implements BroadleafClassTransformer {
 
     protected static List<String> transformedMethods = new ArrayList<String>();
     protected static List<String> annotationTransformedClasses = new ArrayList<String>();
@@ -81,6 +84,9 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
     @Resource(name="blDirectCopyIgnorePatterns")
     protected List<DirectCopyIgnorePattern> ignorePatterns = new ArrayList<DirectCopyIgnorePattern>();
 
+    @Resource(name="blConditionalDirectCopyTransformersManager")
+    protected ConditionalDirectCopyTransformersManager conditionalDirectCopyTransformersManager;
+
     public DirectCopyClassTransformer(String moduleName) {
         this.moduleName = moduleName;
         logger = SupportLogManager.getLogger(moduleName, this.getClass());
@@ -94,6 +100,12 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
+
+        // Lambdas and anonymous methods in Java 8 do not have a class name defined and so no transformation should be done
+        if (className == null) {
+            return null;
+        }
+
         //Be careful with Apache library usage in this class (e.g. ArrayUtils). Usage will likely cause a ClassCircularityError
         //under JRebel. Favor not including outside libraries and unnecessary classes.
         CtClass clazz = null;
@@ -140,66 +152,18 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
                 if (isValidPattern) {
                     classPool = ClassPool.getDefault();
                     clazz = classPool.makeClass(new ByteArrayInputStream(classfileBuffer), false);
-                    List<?> attributes = clazz.getClassFile().getAttributes();
-                    Iterator<?> itr = attributes.iterator();
-                    List<String> templates = new ArrayList<String>();
-                    List<Boolean> skips = new ArrayList<Boolean>();
-                    List<Boolean> renames = new ArrayList<Boolean>();
-                    check: {
-                        while(itr.hasNext()) {
-                            Object object = itr.next();
-                            if (AnnotationsAttribute.class.isAssignableFrom(object.getClass())) {
-                                AnnotationsAttribute attr = (AnnotationsAttribute) object;
-                                Annotation[] items = attr.getAnnotations();
-                                for (Annotation annotation : items) {
-                                    String typeName = annotation.getTypeName();
-                                    if (typeName.equals(DirectCopyTransform.class.getName())) {
-                                        ArrayMemberValue arrayMember = (ArrayMemberValue) annotation.getMemberValue("value");
-                                        for (MemberValue arrayMemberValue : arrayMember.getValue()) {
-                                            AnnotationMemberValue member = (AnnotationMemberValue) arrayMemberValue;
-                                            Annotation memberAnnot = member.getValue();
-                                            ArrayMemberValue annot = (ArrayMemberValue) memberAnnot.getMemberValue("templateTokens");
-                                            for (MemberValue memberValue : annot.getValue()) {
-                                                String val = ((StringMemberValue) memberValue).getValue();
-                                                if (val != null && templateTokens.containsKey(val)) {
-                                                    templateCheck: {
-                                                        for (DirectCopyIgnorePattern matchedPattern : matchedPatterns) {
-                                                            for (String ignoreToken : matchedPattern.getTemplateTokenPatterns()) {
-                                                                if (val.matches(ignoreToken)) {
-                                                                    break templateCheck;
-                                                                }
-                                                            }
-                                                        }
-                                                        templates.add(templateTokens.get(val));
-                                                    }
-                                                }
-                                            }
-                                            BooleanMemberValue skipAnnot = (BooleanMemberValue) memberAnnot.getMemberValue("skipOverlaps");
-                                            if (skipAnnot != null) {
-                                                skips.add(skipAnnot.getValue());
-                                            } else {
-                                                skips.add(mySkipOverlaps);
-                                            }
-                                            BooleanMemberValue renameAnnot = (BooleanMemberValue) memberAnnot.getMemberValue("renameMethodOverlaps");
-                                            if (renameAnnot != null) {
-                                                renames.add(renameAnnot.getValue());
-                                            } else {
-                                                renames.add(myRenameMethodOverlaps);
-                                            }
-                                        }
-                                        xformVals = templates.toArray(new String[templates.size()]);
-                                        xformSkipOverlaps = skips.toArray(new Boolean[skips.size()]);
-                                        xformRenameMethodOverlaps = renames.toArray(new Boolean[renames.size()]);
-                                        break check;
-                                    }
-                                }
-                            }
-                        }
+                    XFormParams params = reviewDirectCopyTransformAnnotations(clazz, mySkipOverlaps, myRenameMethodOverlaps, matchedPatterns);
+                    XFormParams conditionalParams = reviewConditionalDirectCopyTransforms(convertedClassName, matchedPatterns);
+                    if (conditionalParams != null && !conditionalParams.isEmpty()) {
+                        params = combineXFormParams(params, conditionalParams);
                     }
+                    xformVals = params.getXformVals();
+                    xformSkipOverlaps = params.getXformSkipOverlaps();
+                    xformRenameMethodOverlaps = params.getXformRenameMethodOverlaps();
                 }
             }
             if (xformVals != null && xformVals.length > 0) {
-                logger.lifecycle(LifeCycleEvent.START, String.format("Transform - Copying into [%s] from [%s]", xformKey,
+                logger.debug(String.format("[%s] - Transform - Copying into [%s] from [%s]", LifeCycleEvent.END, xformKey,
                         StringUtils.join(xformVals, ",")));
                 // Load the destination class and defrost it so it is eligible for modifications
                 clazz.defrost();
@@ -336,7 +300,7 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
                 if (xformTemplates.isEmpty()) {
                     annotationTransformedClasses.add(convertedClassName);
                 }
-                logger.lifecycle(LifeCycleEvent.END, String.format("Transform - Copying into [%s] from [%s]", xformKey,
+                logger.debug(String.format("[%s] - Transform - Copying into [%s] from [%s]", LifeCycleEvent.END, xformKey,
                                     StringUtils.join(xformVals, ",")));
                 return clazz.toBytecode();
             }
@@ -356,6 +320,160 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
         }
 
         return null;
+    }
+
+
+    /**
+     * Combines two {@link org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyClassTransformer.XFormParams} together with
+     * first passed in xformParama supercedes the second passed in parameter.
+     *
+     * @param defaultParams
+     * @param conditionalParams
+     * @return
+     */
+    protected XFormParams combineXFormParams(XFormParams defaultParams, XFormParams conditionalParams) {
+
+        XFormParams response = new XFormParams();
+        Map<String, Boolean> templateSkipMap = new LinkedHashMap<>();
+        List<String> templates = new ArrayList<String>();
+        List<Boolean> skips = new ArrayList<Boolean>();
+        List<Boolean> renames = new ArrayList<Boolean>();
+        // Add the default Params
+        if (!defaultParams.isEmpty()) {
+            for (int iter = 0; iter < defaultParams.getXformVals().length; iter++) {
+                String defaultParam = defaultParams.getXformVals()[iter];
+                if (!templateSkipMap.containsKey(defaultParam)) {
+                    templateSkipMap.put(defaultParam, true);
+                    templates.add(defaultParam);
+                    skips.add(defaultParams.getXformSkipOverlaps()[iter]);
+                    renames.add(defaultParams.getXformRenameMethodOverlaps()[iter]);
+                }
+            }
+        }
+
+        // Only add Conditional Params if they are not already included
+        for (int iter = 0; iter < conditionalParams.getXformVals().length; iter++) {
+            String conditionalValue = conditionalParams.getXformVals()[iter];
+            if (!templateSkipMap.containsKey(conditionalValue)) {
+                templates.add(conditionalValue);
+                skips.add(conditionalParams.getXformSkipOverlaps()[iter]);
+                renames.add(conditionalParams.getXformRenameMethodOverlaps()[iter]);
+            }
+        }
+
+
+        // convert list to arrays
+        response.setXformVals(templates.toArray(new String[templates.size()]));
+        response.setXformSkipOverlaps(skips.toArray(new Boolean[skips.size()]));
+        response.setXformRenameMethodOverlaps(renames.toArray(new Boolean[renames.size()]));
+        return response;
+    }
+
+    /**
+     * Retrieves {@link DirectCopyTransformTypes} that are placed as annotations on classes.
+     * @param clazz
+     * @param mySkipOverlaps
+     * @param myRenameMethodOverlaps
+     * @param matchedPatterns
+     * @return
+     */
+    protected XFormParams reviewDirectCopyTransformAnnotations(CtClass clazz, boolean mySkipOverlaps, boolean myRenameMethodOverlaps, List<DirectCopyIgnorePattern> matchedPatterns) {
+        List<?> attributes = clazz.getClassFile().getAttributes();
+        Iterator<?> itr = attributes.iterator();
+        List<String> templates = new ArrayList<String>();
+        List<Boolean> skips = new ArrayList<Boolean>();
+        List<Boolean> renames = new ArrayList<Boolean>();
+        XFormParams response = new XFormParams();
+        check: {
+            while(itr.hasNext()) {
+                Object object = itr.next();
+                if (AnnotationsAttribute.class.isAssignableFrom(object.getClass())) {
+                    AnnotationsAttribute attr = (AnnotationsAttribute) object;
+                    Annotation[] items = attr.getAnnotations();
+                    for (Annotation annotation : items) {
+                        String typeName = annotation.getTypeName();
+                        if (typeName.equals(DirectCopyTransform.class.getName())) {
+                            ArrayMemberValue arrayMember = (ArrayMemberValue) annotation.getMemberValue("value");
+                            for (MemberValue arrayMemberValue : arrayMember.getValue()) {
+                                AnnotationMemberValue member = (AnnotationMemberValue) arrayMemberValue;
+                                Annotation memberAnnot = member.getValue();
+                                ArrayMemberValue annot = (ArrayMemberValue) memberAnnot.getMemberValue("templateTokens");
+                                for (MemberValue memberValue : annot.getValue()) {
+                                    String val = ((StringMemberValue) memberValue).getValue();
+                                    reviewTemplateTokens(matchedPatterns, templates, val);
+                                }
+                                BooleanMemberValue skipAnnot = (BooleanMemberValue) memberAnnot.getMemberValue("skipOverlaps");
+                                if (skipAnnot != null) {
+                                    skips.add(skipAnnot.getValue());
+                                } else {
+                                    skips.add(mySkipOverlaps);
+                                }
+                                BooleanMemberValue renameAnnot = (BooleanMemberValue) memberAnnot.getMemberValue("renameMethodOverlaps");
+                                if (renameAnnot != null) {
+                                    renames.add(renameAnnot.getValue());
+                                } else {
+                                    renames.add(myRenameMethodOverlaps);
+                                }
+                            }
+                            response.setXformVals(templates.toArray(new String[templates.size()]));
+                            response.setXformSkipOverlaps(skips.toArray(new Boolean[skips.size()]));
+                            response.setXformRenameMethodOverlaps(renames.toArray(new Boolean[renames.size()]));
+                            break check;
+                        }
+                    }
+                }
+            }
+        }
+        return response;
+    }
+
+    /**
+     * Retrieves {@link DirectCopyTransformTypes} that are conditionally/optionally included via properties file.
+     * @see org.broadleafcommerce.common.weave.ConditionalDirectCopyTransformersManager
+     *
+     * @param convertedClassName
+     * @param matchedPatterns
+     * @return
+     */
+    protected XFormParams reviewConditionalDirectCopyTransforms(String convertedClassName, List<DirectCopyIgnorePattern> matchedPatterns) {
+        XFormParams response = new XFormParams();
+        List<String> templates = new ArrayList<String>();
+        List<Boolean> skips = new ArrayList<Boolean>();
+        List<Boolean> renames = new ArrayList<Boolean>();
+        if (conditionalDirectCopyTransformersManager.isEntityEnabled(convertedClassName)) {
+            ConditionalDirectCopyTransformMemberDto dto = conditionalDirectCopyTransformersManager.getTransformMember(convertedClassName);
+            for (String templateToken : dto.getTemplateTokens()) {
+                reviewTemplateTokens(matchedPatterns, templates, templateToken);
+            }
+            // For each of the templates being applied, ensure that they all have configured the right overlap configs
+            // Looping through templates and not templateTokens because 1 template token can drive multiple templates
+            // (e.g. 
+            for (int i = 0; i < templates.size(); i++) {
+                skips.add(dto.isSkipOverlaps());
+                renames.add(dto.isRenameMethodOverlaps());
+            }
+            
+            response.setXformVals(templates.toArray(new String[templates.size()]));
+            response.setXformSkipOverlaps(skips.toArray(new Boolean[skips.size()]));
+            response.setXformRenameMethodOverlaps(renames.toArray(new Boolean[renames.size()]));
+        }
+        return response;
+    }
+
+    protected void reviewTemplateTokens(List<DirectCopyIgnorePattern> matchedPatterns, List<String> templates, String val) {
+        if (val != null && templateTokens.containsKey(val)) {
+            templateCheck: {
+                for (DirectCopyIgnorePattern matchedPattern : matchedPatterns) {
+                    for (String ignoreToken : matchedPattern.getTemplateTokenPatterns()) {
+                        if (val.matches(ignoreToken)) {
+                            break templateCheck;
+                        }
+                    }
+                }
+                String[] templateVals = templateTokens.get(val).split(",");
+                templates.addAll(Arrays.asList(templateVals));
+            }
+        }
     }
 
     protected void buildClassLevelAnnotations(ClassFile classFile, ClassFile templateClassFile, ConstPool constantPool) throws NotFoundException {
@@ -500,5 +618,40 @@ public class DirectCopyClassTransformer implements BroadleafClassTransformer {
 
     public void setIgnorePatterns(List<DirectCopyIgnorePattern> ignorePatterns) {
         this.ignorePatterns = ignorePatterns;
+    }
+
+    private class XFormParams {
+
+        String[] xformVals = null;
+        Boolean[] xformSkipOverlaps = null;
+        Boolean[] xformRenameMethodOverlaps = null;
+
+        public String[] getXformVals() {
+            return xformVals;
+        }
+
+        public void setXformVals(String[] xformVals) {
+            this.xformVals = xformVals;
+        }
+
+        public Boolean[] getXformSkipOverlaps() {
+            return xformSkipOverlaps;
+        }
+
+        public void setXformSkipOverlaps(Boolean[] xformSkipOverlaps) {
+            this.xformSkipOverlaps = xformSkipOverlaps;
+        }
+
+        public Boolean[] getXformRenameMethodOverlaps() {
+            return xformRenameMethodOverlaps;
+        }
+
+        public void setXformRenameMethodOverlaps(Boolean[] xformRenameMethodOverlaps) {
+            this.xformRenameMethodOverlaps = xformRenameMethodOverlaps;
+        }
+
+        public boolean isEmpty() {
+            return xformVals == null || xformVals.length == 0;
+        }
     }
 }

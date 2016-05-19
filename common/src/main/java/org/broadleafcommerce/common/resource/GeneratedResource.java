@@ -101,9 +101,14 @@ public class GeneratedResource extends AbstractResource implements Serializable 
         return 1;
     }
 
+    public byte[] getBytes() {
+        return source;
+    }
+
     @Override
     public boolean equals(Object res) {
-        if (!(res instanceof InMemoryResource)) {
+        if (res == null) return false;
+        if (!getClass().isAssignableFrom(res.getClass())) {
             return false;
         }
 

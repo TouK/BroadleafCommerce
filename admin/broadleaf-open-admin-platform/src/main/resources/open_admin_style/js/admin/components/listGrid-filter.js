@@ -505,27 +505,49 @@ $(document).ready(function() {
     $('body').on('click', '.custom-entity-search a.search-button', function(event) {
         //this takes place on the main list grid screen so there should be a single list grid
         var search = $(this).closest('form').find('input').val();
-        var $firstHeader = $('body').find('#listGrid-main-header th:first-child');
-        var $input = $firstHeader.find('input.listgrid-criteria-input');
+        var $firstInput = $($('body').find('#listGrid-main-header th input.listgrid-criteria-input')[0]);
         
-        $input.val(search);
+        if ($firstInput.length == 0) {
+           // if there wasn't a primary list grid, check for an inline list grid.
+           $firstInput = $($('body').find('.list-grid-table th input.listgrid-criteria-input')[0]);
+        }
+        
+        $firstInput.val(search);
 
         $(this).closest('form').find('input').val('');
         
         var submitData = {};
-        submitData[$input.data('name')] =  $input.val();
+        submitData[$firstInput.data('name')] =  $firstInput.val();
+        // replace search value if it exist
+        for (key in submitData) {
+            BLCAdmin.history.replaceUrlParameter(key, submitData[key]);
+        }
         
+        // Moved this outside of the ajax call so that it would remove this
+        // value from the url BEFORE making the ajax call.
+        BLCAdmin.history.replaceUrlParameter('startIndex');
+        
+        var urlParams = "";
+        var baseUrl = window.location.href;
+        var indexOfQ = baseUrl.indexOf('?');
+        if (indexOfQ >= 0) {
+            urlParams = baseUrl.substring(indexOfQ + 1);
+        }
+
         BLC.ajax({
-            url: $(this).closest('form').attr('action'),
+            url: $(this).closest('form').attr('action') +'?'+ urlParams,
             type: "GET",
             data: submitData
         }, function(data) {
-            BLCAdmin.history.replaceUrlParameter('startIndex');
             for (key in submitData) {
                 BLCAdmin.history.replaceUrlParameter(key, submitData[key]);
             }
+            
+            // Added the scroll to Index so that it does not save the previous
+            // current index from before starting the search.
+            BLCAdmin.listGrid.paginate.scrollToIndex($('body').find('tbody'), 0);
             BLCAdmin.listGrid.replaceRelatedListGrid($(data), null, { isRefresh : false});
-            $input.trigger('input');
+            $firstInput.trigger('input');
         });
         return false;
     });

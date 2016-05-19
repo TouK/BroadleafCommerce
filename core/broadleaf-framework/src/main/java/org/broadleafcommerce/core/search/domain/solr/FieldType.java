@@ -58,6 +58,7 @@ public class FieldType implements Serializable, BroadleafEnumerationType {
     public static final FieldType TRIELONG = new FieldType("tl", "Trie Long");
     public static final FieldType TRIEDOUBLE = new FieldType("td", "Trie Double");
     public static final FieldType TRIEDATE = new FieldType("tdt", "Trie Date");
+    public static final FieldType COORDINATE = new FieldType("c", "Coordinate");
 
     public static FieldType getInstance(final String type) {
         return TYPES.get(type);
@@ -106,7 +107,7 @@ public class FieldType implements Serializable, BroadleafEnumerationType {
             return true;
         if (obj == null)
             return false;
-        if (getClass() != obj.getClass())
+        if (!getClass().isAssignableFrom(obj.getClass()))
             return false;
         FieldType other = (FieldType) obj;
         if (type == null) {

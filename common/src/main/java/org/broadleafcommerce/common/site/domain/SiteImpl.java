@@ -21,16 +21,16 @@ package org.broadleafcommerce.common.site.domain;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransform;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMember;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
+import org.broadleafcommerce.common.i18n.service.DynamicTranslationProvider;
 import org.broadleafcommerce.common.persistence.ArchiveStatus;
 import org.broadleafcommerce.common.persistence.Status;
 import org.broadleafcommerce.common.presentation.AdminPresentation;
 import org.broadleafcommerce.common.presentation.AdminPresentationClass;
-import org.broadleafcommerce.common.presentation.AdminPresentationCollection;
 import org.broadleafcommerce.common.presentation.RequiredOverride;
-import org.broadleafcommerce.common.presentation.client.AddMethodType;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
 import org.broadleafcommerce.common.site.service.type.SiteResolutionType;
 import org.hibernate.annotations.BatchSize;
@@ -66,11 +66,10 @@ import javax.persistence.Table;
 @Table(name = "BLC_SITE")
 @Cache(usage= CacheConcurrencyStrategy.NONSTRICT_READ_WRITE, region="blStandardElements")
 @AdminPresentationClass(friendlyName = "baseSite")
-@SQLDelete(sql="UPDATE BLC_SITE SET ARCHIVED = 'Y' WHERE SITE_ID = ?")
 @DirectCopyTransform({
         @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.MULTITENANT_SITEMARKER)
 })
-public class SiteImpl implements Site, Status {
+public class SiteImpl implements Site, AdminMainEntity {
 
     private static final long serialVersionUID = 1L;
     private static final Log LOG = LogFactory.getLog(SiteImpl.class);
@@ -89,32 +88,46 @@ public class SiteImpl implements Site, Status {
     protected Long id;
 
     @Column (name = "NAME")
-    @AdminPresentation(friendlyName = "SiteImpl_Site_Name", order=1, gridOrder = 1, group = "SiteImpl_Site", prominent = true, requiredOverride = RequiredOverride.REQUIRED)
+    @AdminPresentation(friendlyName = "SiteImpl_Site_Name", order = 1000,
+            gridOrder = 1, prominent = true, requiredOverride = RequiredOverride.REQUIRED, translatable = true)
     protected String name;
 
     @Column (name = "SITE_IDENTIFIER_TYPE")
-    @AdminPresentation(friendlyName = "SiteImpl_Site_Identifier_Type", order=2, gridOrder = 2, group = "SiteImpl_Site", prominent = true, broadleafEnumeration = "org.broadleafcommerce.common.site.service.type.SiteResolutionType", fieldType = SupportedFieldType.BROADLEAF_ENUMERATION, requiredOverride = RequiredOverride.REQUIRED)
+    @AdminPresentation(friendlyName = "SiteImpl_Site_Identifier_Type", order = 2000,
+            gridOrder = 2, prominent = true,
+            broadleafEnumeration = "org.broadleafcommerce.common.site.service.type.SiteResolutionType", requiredOverride=RequiredOverride.REQUIRED,
+            fieldType = SupportedFieldType.BROADLEAF_ENUMERATION)
     protected String siteIdentifierType;
 
     @Column (name = "SITE_IDENTIFIER_VALUE")
-    @AdminPresentation(friendlyName = "SiteImpl_Site_Identifier_Value", order=3, gridOrder = 3, group = "SiteImpl_Site", prominent = true, requiredOverride = RequiredOverride.REQUIRED)
+    @AdminPresentation(friendlyName = "SiteImpl_Site_Identifier_Value", order = 3000,
+            gridOrder = 3, prominent = true, requiredOverride=RequiredOverride.REQUIRED)
     @Index(name = "BLC_SITE_ID_VAL_INDEX", columnNames = { "SITE_IDENTIFIER_VALUE" })
     protected String siteIdentifierValue;
 
+    @Column(name = "DEACTIVATED")
+    @AdminPresentation(friendlyName = "SiteImpl_Deactivated", order = 4000,
+            gridOrder = 4, excluded = false,
+            defaultValue = "false")
+    protected Boolean deactivated = false;
+    
     @ManyToMany(targetEntity = CatalogImpl.class, cascade = {CascadeType.PERSIST, CascadeType.DETACH, CascadeType.MERGE, CascadeType.REFRESH})
     @JoinTable(name = "BLC_SITE_CATALOG", joinColumns = @JoinColumn(name = "SITE_ID"), inverseJoinColumns = @JoinColumn(name = "CATALOG_ID"))
     @BatchSize(size = 50)
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
-    @AdminPresentationCollection(addType = AddMethodType.LOOKUP, friendlyName = "siteCatalogTitle", manyToField = "sites")
+    @AdminPresentation(excluded = true)
     protected List<Catalog> catalogs = new ArrayList<Catalog>();
 
-    @Column(name = "DEACTIVATED")
-    @AdminPresentation(friendlyName = "SiteImpl_Deactivated", order = 4, gridOrder = 4, group = "SiteImpl_Site", excluded = true)
-    protected Boolean deactivated = false;
+    /**************************************************/
+    /**
+     * Adding additional properties to this class or dynamically weaving in properties will have to contribute to the extension
+     * manager for {@link SiteServiceImpl}, {@link SiteServiceExtensionHandler}.
+     */
+    /**************************************************/
 
     @Embedded
     protected ArchiveStatus archiveStatus = new ArchiveStatus();
-
+    
     @Override
     public Long getId() {
         return id;
@@ -127,7 +140,7 @@ public class SiteImpl implements Site, Status {
 
     @Override
     public String getName() {
-        return name;
+        return DynamicTranslationProvider.getValue(this, "name", name);
     }
 
     @Override
@@ -157,12 +170,12 @@ public class SiteImpl implements Site, Status {
 
     @Override
     public SiteResolutionType getSiteResolutionType() {
-        return SiteResolutionType.getInstance(siteIdentifierType);
+        return siteIdentifierType == null ? null : SiteResolutionType.getInstance(siteIdentifierType);
     }
 
     @Override
     public void setSiteResolutionType(SiteResolutionType siteResolutionType) {
-        this.siteIdentifierType = siteResolutionType.getType();
+        this.siteIdentifierType = siteResolutionType == null ? null : siteResolutionType.getType();
     }
 
     @Override
@@ -174,13 +187,16 @@ public class SiteImpl implements Site, Status {
     public void setCatalogs(List<Catalog> catalogs) {
         this.catalogs = catalogs;
     }
-
+    
     @Override
     public Character getArchived() {
+       ArchiveStatus temp;
        if (archiveStatus == null) {
-           archiveStatus = new ArchiveStatus();
+           temp = new ArchiveStatus();
+       } else {
+           temp = archiveStatus;
        }
-       return archiveStatus.getArchived();
+       return temp.getArchived();
     }
 
     @Override
@@ -189,6 +205,11 @@ public class SiteImpl implements Site, Status {
            archiveStatus = new ArchiveStatus();
        }
        archiveStatus.setArchived(archived);
+    }
+    
+    @Override
+    public ArchiveStatus getArchiveStatus() {
+        return archiveStatus;
     }
 
     @Override
@@ -217,6 +238,11 @@ public class SiteImpl implements Site, Status {
     public void setDeactivated(boolean deactivated) {
         this.deactivated = deactivated;
     }
+    
+    @Override
+    public boolean isTemplateSite() {
+        return false;
+    }
 
     public void checkCloneable(Site site) throws CloneNotSupportedException, SecurityException, NoSuchMethodException {
         Method cloneMethod = site.getClass().getMethod("clone", new Class[]{});
@@ -243,17 +269,34 @@ public class SiteImpl implements Site, Status {
             clone.setSiteIdentifierValue(getSiteIdentifierValue());
             ((Status) clone).setArchived(getArchived());
 
-            for (Catalog catalog : getCatalogs()) {
-                Catalog cloneCatalog = new CatalogImpl();
-                cloneCatalog.setId(catalog.getId());
-                cloneCatalog.setName(catalog.getName());
-                clone.getCatalogs().add(cloneCatalog);
+            if (getCatalogs() != null) {
+                for (Catalog catalog : getCatalogs()) {
+                    if (catalog != null) {
+                        Catalog cloneCatalog = new CatalogImpl();
+
+                        cloneCatalog.setId(catalog.getId());
+                        cloneCatalog.setName(catalog.getName());
+                        if (clone.getCatalogs() != null) {
+                            clone.getCatalogs().add(cloneCatalog);
+                        } else {
+                            List<Catalog> cloneCatalogs = new ArrayList<Catalog>();
+                            cloneCatalogs.add(cloneCatalog);
+                            clone.setCatalogs(cloneCatalogs);
+                        }
+                    }
+                }
             }
+
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
 
         return clone;
+    }
+
+    @Override
+    public String getMainEntityName() {
+        return getName();
     }
 }
 

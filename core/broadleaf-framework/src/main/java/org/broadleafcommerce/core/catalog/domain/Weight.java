@@ -19,15 +19,14 @@
  */
 package org.broadleafcommerce.core.catalog.domain;
 
-import java.io.Serializable;
-import java.math.BigDecimal;
-
-import javax.persistence.Column;
-import javax.persistence.Embeddable;
-
 import org.broadleafcommerce.common.presentation.AdminPresentation;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
 import org.broadleafcommerce.common.util.WeightUnitOfMeasureType;
+
+import javax.persistence.Column;
+import javax.persistence.Embeddable;
+import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * 
@@ -40,14 +39,14 @@ public class Weight implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @Column(name = "WEIGHT")
-    @AdminPresentation(friendlyName = "ProductWeight_Product_Weight", order = 8000,
+    @AdminPresentation(friendlyName = "ProductWeight_Product_Weight", order = 9000,
         tab = ProductImpl.Presentation.Tab.Name.Shipping, tabOrder = ProductImpl.Presentation.Tab.Order.Shipping,
         group = ProductImpl.Presentation.Group.Name.Shipping, groupOrder = ProductImpl.Presentation.Group.Order.Shipping)
     protected BigDecimal weight;
 
         
     @Column(name = "WEIGHT_UNIT_OF_MEASURE")
-    @AdminPresentation(friendlyName = "ProductWeight_Product_Weight_Units", order = 9000,
+    @AdminPresentation(friendlyName = "ProductWeight_Product_Weight_Units", order = 10000,
         tab = ProductImpl.Presentation.Tab.Name.Shipping, tabOrder = ProductImpl.Presentation.Tab.Order.Shipping,
         group = ProductImpl.Presentation.Group.Name.Shipping, groupOrder = ProductImpl.Presentation.Group.Order.Shipping,
         fieldType= SupportedFieldType.BROADLEAF_ENUMERATION, 
@@ -75,7 +74,8 @@ public class Weight implements Serializable {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Weight)) return false;
+        if (o == null) return false;
+        if (!getClass().isAssignableFrom(o.getClass())) return false;
 
         Weight weight1 = (Weight) o;
 

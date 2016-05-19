@@ -19,7 +19,8 @@
  */
 package org.broadleafcommerce.core.offer.service.processor;
 
-import org.apache.commons.collections.map.LRUMap;
+import org.apache.commons.collections4.map.LRUMap;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.RequestDTO;
@@ -30,7 +31,9 @@ import org.broadleafcommerce.common.time.SystemTime;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.core.offer.domain.Offer;
 import org.broadleafcommerce.core.offer.domain.OfferItemCriteria;
-import org.broadleafcommerce.core.offer.domain.OfferRule;
+import org.broadleafcommerce.core.offer.domain.OfferOfferRuleXref;
+import org.broadleafcommerce.core.offer.domain.OfferQualifyingCriteriaXref;
+import org.broadleafcommerce.core.offer.domain.OfferTargetCriteriaXref;
 import org.broadleafcommerce.core.offer.service.OfferServiceExtensionManager;
 import org.broadleafcommerce.core.offer.service.discount.CandidatePromotionItems;
 import org.broadleafcommerce.core.offer.service.discount.domain.PromotableOrderItem;
@@ -39,12 +42,8 @@ import org.broadleafcommerce.core.offer.service.type.OfferRuleType;
 import org.broadleafcommerce.core.offer.service.type.OfferType;
 import org.broadleafcommerce.core.order.service.type.FulfillmentType;
 import org.broadleafcommerce.profile.core.domain.Customer;
-import org.hibernate.tool.hbm2x.StringUtils;
 import org.joda.time.LocalDateTime;
-import org.mvel2.MVEL;
-import org.mvel2.ParserContext;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -76,20 +75,22 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
 
     protected CandidatePromotionItems couldOfferApplyToOrderItems(Offer offer, List<PromotableOrderItem> promotableOrderItems) {
         CandidatePromotionItems candidates = new CandidatePromotionItems();
-        if (offer.getQualifyingItemCriteria() == null || offer.getQualifyingItemCriteria().size() == 0) {
+        if (offer.getQualifyingItemCriteriaXref() == null || offer.getQualifyingItemCriteriaXref().size() == 0) {
             candidates.setMatchedQualifier(true);
         } else {
-            for (OfferItemCriteria criteria : offer.getQualifyingItemCriteria()) {
-                checkForItemRequirements(offer, candidates, criteria, promotableOrderItems, true);
-                if (!candidates.isMatchedQualifier()) {
-                    break;
+            for (OfferQualifyingCriteriaXref criteriaXref : offer.getQualifyingItemCriteriaXref()) {
+                if (criteriaXref.getOfferItemCriteria() != null) {
+                    checkForItemRequirements(offer, candidates, criteriaXref.getOfferItemCriteria(), promotableOrderItems, true);
+                    if (!candidates.isMatchedQualifier()) {
+                        break;
+                    }
                 }
             }           
         }
         
-        if (offer.getType().equals(OfferType.ORDER_ITEM) && offer.getTargetItemCriteria() != null) {
-            for (OfferItemCriteria criteria : offer.getTargetItemCriteria()) {
-                checkForItemRequirements(offer, candidates, criteria, promotableOrderItems, false);
+        if (offer.getType().equals(OfferType.ORDER_ITEM) && offer.getTargetItemCriteriaXref() != null) {
+            for (OfferTargetCriteriaXref xref : offer.getTargetItemCriteriaXref()) {
+                checkForItemRequirements(offer, candidates, xref.getOfferItemCriteria(), promotableOrderItems, false);
                 if (!candidates.isMatchedTarget()) {
                     break;
                 }
@@ -122,7 +123,7 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
             return true;
         }
 
-        if (isEmpty(offer.getQualifyingItemCriteria())) {
+        if (isEmpty(offer.getQualifyingItemCriteriaXref())) {
             if (OfferType.ORDER_ITEM.equals(offer.getType())) {
                 if (LOG.isWarnEnabled()) {
                     LOG.warn("Offer " + offer.getName() + " has a subtotal item requirement but no item qualification criteria.");
@@ -231,35 +232,12 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
      * @return a Boolean object containing the result of executing the MVEL expression
      */
     public Boolean executeExpression(String expression, Map<String, Object> vars) {
-        try {
-            Serializable exp;
-            synchronized (EXPRESSION_CACHE) {
-                exp = (Serializable) EXPRESSION_CACHE.get(expression);
-                if (exp == null) {
-                    ParserContext context = new ParserContext();
-                    context.addImport("OfferType", OfferType.class);
-                    context.addImport("FulfillmentType", FulfillmentType.class);
-                    context.addImport("MVEL", MVEL.class);
-                    context.addImport("MvelHelper", MvelHelper.class);
-                    //            StringBuffer completeExpression = new StringBuffer(functions.toString());
-                    //            completeExpression.append(" ").append(expression);
-                    exp = MVEL.compileExpression(expression, context);
-
-                    EXPRESSION_CACHE.put(expression, exp);
-                }
-            }
-
-            Object test = MVEL.executeExpression(exp, vars);
-            
-            return (Boolean) test;
-        } catch (Exception e) {
-            //Unable to execute the MVEL expression for some reason
-            //Return false, but notify about the bad expression through logs
-            LOG.warn("Unable to parse and/or execute an mvel expression. Reporting to the logs and returning false " +
-                    "for the match expression:" + expression, e);
-            return false;
+        synchronized (EXPRESSION_CACHE) {
+            Map<String, Class<?>> contextImports = new HashMap<>();
+            contextImports.put("OfferType", OfferType.class);
+            contextImports.put("FulfillmentType", FulfillmentType.class);
+            return MvelHelper.evaluateRule(expression, vars, EXPRESSION_CACHE, contextImports);
         }
-
     }
     
     /**
@@ -337,9 +315,9 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
 
         String rule = null;
 
-        OfferRule customerRule = offer.getOfferMatchRules().get(OfferRuleType.REQUEST.getType());
-        if (customerRule != null) {
-            rule = customerRule.getMatchRule();
+        OfferOfferRuleXref ruleXref = offer.getOfferMatchRulesXref().get(OfferRuleType.REQUEST.getType());
+        if (ruleXref != null && ruleXref.getOfferRule() != null) {
+            rule = ruleXref.getOfferRule().getMatchRule();
         }
 
         if (rule != null) {
@@ -382,12 +360,12 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
         boolean appliesToTimePeriod = false;
 
         String rule = null;
-
-        OfferRule timeRule = offer.getOfferMatchRules().get(OfferRuleType.TIME.getType());
-        if (timeRule != null) {
-            rule = timeRule.getMatchRule();
-        }
         
+        OfferOfferRuleXref ruleXref = offer.getOfferMatchRulesXref().get(OfferRuleType.TIME.getType());
+        if (ruleXref != null && ruleXref.getOfferRule() != null) {
+            rule = ruleXref.getOfferRule().getMatchRule();
+        }
+
         if (rule != null) {
             TimeZone timeZone = getOfferTimeZoneProcessor().getTimeZone(offer);
             TimeDTO timeDto = new TimeDTO(SystemTime.asCalendar(timeZone));
@@ -503,9 +481,10 @@ public abstract class AbstractBaseProcessor implements BaseProcessor {
         if (!StringUtils.isEmpty(offer.getAppliesToCustomerRules())) {
             rule = offer.getAppliesToCustomerRules();
         } else {
-            OfferRule customerRule = offer.getOfferMatchRules().get(OfferRuleType.CUSTOMER.getType());
-            if (customerRule != null) {
-                rule = customerRule.getMatchRule();
+
+            OfferOfferRuleXref ruleXref = offer.getOfferMatchRulesXref().get(OfferRuleType.CUSTOMER.getType());
+            if (ruleXref != null && ruleXref.getOfferRule() != null) {
+                rule = ruleXref.getOfferRule().getMatchRule();
             }
         }
 

@@ -17,12 +17,16 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.common;
 
+import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.presentation.AdminPresentation;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.springframework.web.context.request.WebRequest;
 
 import java.io.Serializable;
+import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -36,7 +40,6 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
     @AdminPresentation(friendlyName = "RequestDTOImpl_Request_URI")
     private String requestURI;
 
-
     @AdminPresentation(friendlyName = "RequestDTOImpl_Full_Url")
     private String fullUrlWithQueryString;
 
@@ -46,6 +49,9 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
     public RequestDTOImpl(HttpServletRequest request) {
         requestURI = request.getRequestURI();
         fullUrlWithQueryString = request.getRequestURL().toString();
+        if (StringUtils.isNotEmpty(request.getQueryString())) {
+            fullUrlWithQueryString += "?" + request.getQueryString();
+        }
         secure = ("HTTPS".equalsIgnoreCase(request.getScheme()) || request.isSecure());
     }
 
@@ -57,6 +63,7 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
     /**
      * @return  returns the request not including the protocol, domain, or query string
      */
+    @Override
     public String getRequestURI() {
         return requestURI;
     }
@@ -64,6 +71,7 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
     /**
      * @return Returns the URL and parameters.
      */
+    @Override
     public String getFullUrLWithQueryString() {
         return fullUrlWithQueryString;
     }
@@ -71,6 +79,7 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
     /**
      * @return true if this request came in through HTTPS
      */
+    @Override
     public Boolean isSecure() {
         return secure;
     }
@@ -93,6 +102,14 @@ public class RequestDTOImpl implements RequestDTO, Serializable {
 
     public void setRequestURI(String requestURI) {
         this.requestURI = requestURI;
+    }
+
+    public Map<String, Object> getProperties() {
+        if (BroadleafRequestContext.getBroadleafRequestContext() != null) {
+            return BroadleafRequestContext.getBroadleafRequestContext().getAdditionalProperties();
+        } else {
+            return null;
+        }
     }
 
 }

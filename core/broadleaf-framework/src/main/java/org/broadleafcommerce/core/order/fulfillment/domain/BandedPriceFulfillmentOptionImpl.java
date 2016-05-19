@@ -19,17 +19,23 @@
  */
 package org.broadleafcommerce.core.order.fulfillment.domain;
 
+import org.broadleafcommerce.common.copy.CreateResponse;
+import org.broadleafcommerce.common.copy.MultiTenantCopyContext;
+import org.broadleafcommerce.common.extensibility.jpa.clone.IgnoreEnterpriseBehavior;
 import org.broadleafcommerce.common.presentation.AdminPresentationClass;
+import org.broadleafcommerce.core.order.domain.FulfillmentOption;
 import org.broadleafcommerce.core.order.domain.FulfillmentOptionImpl;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.persistence.Entity;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
-import java.util.List;
 
 /**
  * 
@@ -46,7 +52,8 @@ public class BandedPriceFulfillmentOptionImpl extends FulfillmentOptionImpl impl
     
     @OneToMany(mappedBy="option", targetEntity=FulfillmentPriceBandImpl.class)
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
-    protected List<FulfillmentPriceBand> bands;
+    @IgnoreEnterpriseBehavior
+    protected List<FulfillmentPriceBand> bands = new ArrayList<FulfillmentPriceBand>();
 
     @Override
     public List<FulfillmentPriceBand> getBands() {
@@ -56,6 +63,22 @@ public class BandedPriceFulfillmentOptionImpl extends FulfillmentOptionImpl impl
     @Override
     public void setBands(List<FulfillmentPriceBand> bands) {
         this.bands = bands;
+    }
+
+    @Override
+    public CreateResponse<BandedPriceFulfillmentOption> createOrRetrieveCopyInstance(MultiTenantCopyContext context)
+            throws CloneNotSupportedException {
+        CreateResponse<BandedPriceFulfillmentOption> createResponse = super.createOrRetrieveCopyInstance(context);
+        if (createResponse.isAlreadyPopulated()) {
+            return createResponse;
+        }
+        BandedPriceFulfillmentOption myClone = createResponse.getClone();
+
+        for (FulfillmentPriceBand band : bands) {
+            myClone.getBands().add(band);
+        }
+
+        return createResponse;
     }
 
 }

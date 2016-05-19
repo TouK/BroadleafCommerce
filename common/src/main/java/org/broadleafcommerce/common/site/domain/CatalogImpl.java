@@ -17,71 +17,87 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.common.site.domain;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransform;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMember;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
+import org.broadleafcommerce.common.i18n.service.DynamicTranslationProvider;
+import org.broadleafcommerce.common.persistence.ArchiveStatus;
 import org.broadleafcommerce.common.presentation.AdminPresentation;
+import org.broadleafcommerce.common.presentation.AdminPresentationClass;
+import org.broadleafcommerce.common.presentation.RequiredOverride;
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
+import org.hibernate.annotations.Cascade;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.Parameter;
+import org.hibernate.annotations.SQLDelete;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javax.persistence.Column;
+import javax.persistence.Embedded;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
-import javax.persistence.JoinColumn;
-import javax.persistence.JoinTable;
-import javax.persistence.ManyToMany;
+import javax.persistence.OneToMany;
 import javax.persistence.Table;
+import javax.persistence.Transient;
 
 /**
  * @author Jeff Fischer
  */
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
-@Table(name="BLC_CATALOG")
-@Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
+@Table(name = "BLC_CATALOG")
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region = "blStandardElements")
+@AdminPresentationClass(friendlyName = "CatalogImpl")
+@SQLDelete(sql = "UPDATE BLC_CATALOG SET ARCHIVED = 'Y' WHERE CATALOG_ID = ?")
 @DirectCopyTransform({
         @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.MULTITENANT_SITEMARKER)
 })
-public class CatalogImpl implements Catalog {
+public class CatalogImpl implements Catalog, AdminMainEntity {
 
     private static final Log LOG = LogFactory.getLog(CatalogImpl.class);
 
     @Id
-    @GeneratedValue(generator= "CatalogId")
+    @GeneratedValue(generator = "CatalogId")
     @GenericGenerator(
-        name="CatalogId",
-        strategy="org.broadleafcommerce.common.persistence.IdOverrideTableGenerator",
-        parameters = {
-            @Parameter(name="segment_value", value="CatalogImpl"),
-            @Parameter(name="entity_name", value="org.broadleafcommerce.common.site.domain.CatalogImpl")
-        }
-    )
+            name = "CatalogId",
+            strategy = "org.broadleafcommerce.common.persistence.IdOverrideTableGenerator",
+            parameters = {
+                    @Parameter(name = "segment_value", value = "CatalogImpl"),
+                    @Parameter(name = "entity_name", value = "org.broadleafcommerce.common.site.domain.CatalogImpl")
+            })
     @Column(name = "CATALOG_ID")
     protected Long id;
 
     @Column(name = "NAME")
-    @AdminPresentation(friendlyName = "Catalog_Name", order=1, prominent = true)
+    @AdminPresentation(friendlyName = "Catalog_Name", gridOrder = 1, order = 1, prominent = true, requiredOverride = RequiredOverride.REQUIRED, translatable = true)
     protected String name;
 
-    @ManyToMany(targetEntity = SiteImpl.class)
-    @JoinTable(name = "BLC_SITE_CATALOG", joinColumns = @JoinColumn(name = "CATALOG_ID"), inverseJoinColumns = @JoinColumn(name = "SITE_ID"))
-    @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
+    @OneToMany(targetEntity = SiteCatalogXrefImpl.class, mappedBy = "catalog", orphanRemoval = true)
+    @Cascade(value = { org.hibernate.annotations.CascadeType.MERGE, org.hibernate.annotations.CascadeType.PERSIST })
+    @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region = "blStandardElements")
     @BatchSize(size = 50)
+    protected List<SiteCatalogXref> siteXrefs = new ArrayList<SiteCatalogXref>();
+
+    @Transient
     protected List<Site> sites = new ArrayList<Site>();
+
+    @Embedded
+    protected ArchiveStatus archiveStatus = new ArchiveStatus();
 
     @Override
     public Long getId() {
@@ -95,7 +111,7 @@ public class CatalogImpl implements Catalog {
 
     @Override
     public String getName() {
-        return name;
+        return DynamicTranslationProvider.getValue(this, "name", name);
     }
 
     @Override
@@ -105,7 +121,12 @@ public class CatalogImpl implements Catalog {
 
     @Override
     public List<Site> getSites() {
-        return sites;
+        if (sites.isEmpty()) {
+            for (SiteCatalogXref xref : siteXrefs) {
+                sites.add(xref.getSite());
+            }
+        }
+        return Collections.unmodifiableList(sites);
     }
 
     @Override
@@ -113,8 +134,18 @@ public class CatalogImpl implements Catalog {
         this.sites = sites;
     }
 
+    @Override
+    public List<SiteCatalogXref> getSiteXrefs() {
+        return siteXrefs;
+    }
+
+    @Override
+    public void setSiteXrefs(List<SiteCatalogXref> siteXrefs) {
+        this.siteXrefs = siteXrefs;
+    }
+
     public void checkCloneable(Catalog catalog) throws CloneNotSupportedException, SecurityException, NoSuchMethodException {
-        Method cloneMethod = catalog.getClass().getMethod("clone", new Class[]{});
+        Method cloneMethod = catalog.getClass().getMethod("clone", new Class[] {});
         if (cloneMethod.getDeclaringClass().getName().startsWith("org.broadleafcommerce") && !catalog.getClass().getName().startsWith("org.broadleafcommerce")) {
             //subclass is not implementing the clone method
             throw new CloneNotSupportedException("Custom extensions and implementations should implement clone.");
@@ -140,4 +171,37 @@ public class CatalogImpl implements Catalog {
         return clone;
     }
 
+    @Override
+    public String getMainEntityName() {
+        return getName();
+    }
+
+    @Override
+    public Character getArchived() {
+        ArchiveStatus temp;
+        if (archiveStatus == null) {
+            temp = new ArchiveStatus();
+        } else {
+            temp = archiveStatus;
+        }
+        return temp.getArchived();
+    }
+
+    @Override
+    public void setArchived(Character archived) {
+        if (archiveStatus == null) {
+            archiveStatus = new ArchiveStatus();
+        }
+        archiveStatus.setArchived(archived);
+    }
+
+    @Override
+    public boolean isActive() {
+        if (LOG.isDebugEnabled()) {
+            if ('Y' == getArchived()) {
+                LOG.debug("catalog, " + id + ", inactive due to archived status");
+            }
+        }
+        return 'Y' != getArchived();
+    }
 }

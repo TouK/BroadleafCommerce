@@ -17,9 +17,12 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.core.catalog.domain;
 
+import org.broadleafcommerce.common.copy.MultiTenantCloneable;
 import org.broadleafcommerce.common.media.domain.Media;
+import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.common.vendor.service.type.ContainerShapeType;
 import org.broadleafcommerce.common.vendor.service.type.ContainerSizeType;
 
@@ -28,6 +31,7 @@ import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Implementations of this interface are used to hold data for a Product.  A product is a general description
@@ -41,7 +45,7 @@ import java.util.Map;
  * @author btaylor
  * @see {@link ProductImpl},{@link Sku}, {@link Category}
  */
-public interface Product extends Serializable {
+public interface Product extends Serializable, MultiTenantCloneable<Product> {
 
     /**
      * The id of the Product.
@@ -181,7 +185,7 @@ public interface Product extends Serializable {
      * @return a boolean indicates if the product is active.
      */
     public boolean isActive();
-    
+
     /**
      * Gets the default {@link Sku} associated with this Product. A Product is
      * required to have a default Sku which holds specific information about the Product
@@ -208,7 +212,7 @@ public interface Product extends Serializable {
      * @param defaultSku - the Sku that should be the default for this Product
      */
     public void setDefaultSku(Sku defaultSku);
-    
+
     /**
      * @return whether or not the default sku can be used for a multi-sku product in the case that no 
      * product options are set. Defaults to false if not specified. Note that this only affects multi-sku
@@ -229,7 +233,9 @@ public interface Product extends Serializable {
      * This list does not contain the {@link #getDefaultSku()} and filters by {@link Sku#isActive()}.
      *
      * @return a list of active Skus from {@link #getAdditionalSkus()} for this Product
+     * @deprecated use {@link #getAdditionalSkusXrefs()} instead
      */
+    @Deprecated
     public List<Sku> getSkus();
 
     /**
@@ -269,7 +275,7 @@ public interface Product extends Serializable {
      * @return all the Skus associated to this Product
      */
     public List<Sku> getAllSkus();
-    
+
     /**
      * Gets the media for this product. This serves as a pass-through to
      * the {@link getDefaultSku()} media
@@ -296,18 +302,42 @@ public interface Product extends Serializable {
      * @return all of the Media for all of the Skus for this Product
      */
     public Map<String, Media> getAllSkuMedia();
-     
+
     /**
-     * Returns the default {@link Category} this product is associated with.
+     * Return the {@link org.broadleafcommerce.core.catalog.domain.Category} that contains this product
      *
+     * @return
      */
+    public Category getCategory();
+
+    /**
+     * Set the {@link org.broadleafcommerce.core.catalog.domain.Category} that contains this product
+     *
+     * @param category
+     */
+    public void setCategory(Category category);
+
+    /**
+     * Returns the default {@link Category} this product is associated with. This method will delegate to
+     * {@link #getCategory()} by default, unless the "use.legacy.default.category.mode" property is set to
+     * true in the implementation's property file. If set to true, this method will use legacy behavior,
+     * which is to return the deprecated defaultCategory field.
+     *
+     * @deprecated use {@link #getCategory()} instead
+     */
+    @Deprecated
     public Category getDefaultCategory();
 
     /**
-     * Sets the default {@link Category} to associate this product with.
+     * Sets the default {@link Category} to associate this product with. This method will delegate to
+     * {@link #setCategory(Category)} by default, unless the "use.legacy.default.category.mode" property is set to
+     * true in the implementation's property file. If set to true, this method will use legacy behavior,
+     * which is to set the deprecated defaultCategory field.
      *
+     * @deprecated use {@link #setCategory(Category)} instead
      * @param defaultCategory - the default {@link Category} to associate this product with
      */
+    @Deprecated
     public void setDefaultCategory(Category defaultCategory);
 
     /**
@@ -333,7 +363,7 @@ public interface Product extends Serializable {
      * @param manufacturer
      */
     public void setManufacturer(String manufacturer);
-    
+
     /**
      * Returns the {@link Dimension} for this product
      * <br />
@@ -428,7 +458,7 @@ public interface Product extends Serializable {
      * @param depth
      */
     public void setDepth(BigDecimal depth);
-    
+
     /**
      * Gets the dimension girth
      * <br />
@@ -439,7 +469,7 @@ public interface Product extends Serializable {
      * @return the dimension girth
      */
     public BigDecimal getGirth();
-    
+
     /**
      * Sets the dimension girth
      * <br />
@@ -623,6 +653,13 @@ public interface Product extends Serializable {
     public void setProductOptionXrefs(List<ProductOptionXref> productOptions);
 
     /**
+     * Returns a Map of product option values, keyed by the product option name. 
+     * E.g. "color":["red","green","black"] 
+     * @return
+     */
+    public Map<String, Set<String>> getProductOptionValuesMap();
+
+    /**
      * A product can have a designated URL.   When set, the ProductHandlerMapping will check for this
      * URL and forward this user to the {@link #getDisplayTemplate()}. 
      * 
@@ -640,12 +677,24 @@ public interface Product extends Serializable {
      * @param url
      */
     public void setUrl(String url);
-    
+
+    /**
+     * @return the flag for whether or not the URL should not be generated in the admin
+     */
+    public Boolean getOverrideGeneratedUrl();
+
+    /**
+     * Sets the flag for whether or not the URL should not be generated in the admin
+     * 
+     * @param overrideGeneratedUrl
+     */
+    public void setOverrideGeneratedUrl(Boolean overrideGeneratedUrl);
+
     /**
      * Sets a url-fragment.  By default, the system will attempt to create a unique url-fragment for 
      * this product by taking the {@link Product.getName()} and removing special characters and replacing
      * dashes with spaces.
-     */ 
+     */
     public String getUrlKey();
 
     /**
@@ -669,13 +718,13 @@ public interface Product extends Serializable {
      * @param displayTemplate
      */
     public void setDisplayTemplate(String displayTemplate);
-    
+
     /**
      * Generates a URL that can be used to access the product.  
      * Builds the url by combining the url of the default category with the getUrlKey() of this product.
      */
     public String getGeneratedUrl();
-    
+
     /** 
      * Returns a list of the cross sale products for this product as well
      * all cross sale products in all parent categories of this product.
@@ -683,7 +732,7 @@ public interface Product extends Serializable {
      * @return the cumulative cross sale products
      */
     public List<RelatedProduct> getCumulativeCrossSaleProducts();
-    
+
     /** 
      * Returns a list of the upsale products for this product as well as
      * all upsale products in all parent categories of this product.
@@ -697,8 +746,14 @@ public interface Product extends Serializable {
      */
     public void clearDynamicPrices();
 
+    /**
+     * Retrieve all the xref entities linking this product to parent categories
+     */
     public List<CategoryProductXref> getAllParentCategoryXrefs();
 
+    /**
+     * Set all the xref entities linking this product to parent categories
+     */
     public void setAllParentCategoryXrefs(List<CategoryProductXref> allParentCategories);
 
     /**
@@ -730,4 +785,25 @@ public interface Product extends Serializable {
      * @param taxCode
      */
     public void setTaxCode(String taxCode);
+
+    /**
+     * In most implementations, including the default Broadleaf demo store, if a product doesn't have a retail price, 
+     * it can't be sold.     This method returns true if in the current context, the product has a price.    The current
+     * context may be different when accessed in an entperise context like one using PriceLists or MultiTentant.
+     * @return
+     */
+    public boolean hasRetailPrice();
+
+    /**
+     * added just for convenience, references to defaultSku.retailPrice 
+     * @return
+     */
+    public Money getRetailPrice();
+
+    /**
+     * added just for convenience, references defaultSku.retailPrice 
+     * @return
+     */
+    public Money getSalePrice();
+
 }

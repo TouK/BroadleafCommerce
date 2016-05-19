@@ -302,7 +302,7 @@ public class FulfillmentGroupItemImpl implements FulfillmentGroupItem, Cloneable
     @Override
     public boolean getHasProratedOrderAdjustments() {
         if (proratedOrderAdjustment != null) {
-            return (proratedOrderAdjustment.compareTo(BigDecimal.ZERO) == 0);
+            return (proratedOrderAdjustment.compareTo(BigDecimal.ZERO) != 0);
         }
         return false;
     }
@@ -315,7 +315,7 @@ public class FulfillmentGroupItemImpl implements FulfillmentGroupItem, Cloneable
         if (obj == null) {
             return false;
         }
-        if (getClass() != obj.getClass()) {
+        if (!getClass().isAssignableFrom(obj.getClass())) {
             return false;
         }
         FulfillmentGroupItemImpl other = (FulfillmentGroupItemImpl) obj;

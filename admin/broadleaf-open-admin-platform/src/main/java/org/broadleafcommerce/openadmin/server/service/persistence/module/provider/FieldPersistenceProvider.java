@@ -55,9 +55,14 @@ public interface FieldPersistenceProvider extends Ordered {
      * Media DTO
      */
     public static final int MEDIA = 20000;
-    public static final int MAP_FIELD = 30000;
-    public static final int RULE = 40000;
+    /**
+     * The {@link RuleFieldPersistenceProvider} MUST come prior to the normal map field provider. They both deal with map
+     * field types but rules are a special case
+     */
+    public static final int RULE = 30000;
+    public static final int MAP_FIELD = 40000;
     public static final int MONEY = 50000;
+    public static final int HTML = 60000;
 
     /**
      * Set the property value on the target object. Implementations should translate the requestedValue
@@ -104,4 +109,10 @@ public interface FieldPersistenceProvider extends Ordered {
      */
     FieldProviderResponse filterProperties(AddFilterPropertiesRequest addFilterPropertiesRequest, Map<String, FieldMetadata> properties);
 
+    /**
+     * If the provider should always run, regardless if a previous provider returned a response of HANDLED_BREAK
+     *
+     * @return if this provider should always run
+     */
+    boolean alwaysRun();
 }

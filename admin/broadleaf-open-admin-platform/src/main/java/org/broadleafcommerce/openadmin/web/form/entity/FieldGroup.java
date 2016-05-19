@@ -36,14 +36,22 @@ public class FieldGroup {
     protected Integer order;
     protected Set<Field> alternateOrderedFields = new HashSet<Field>();
     protected Set<Field> fields = new HashSet<Field>();
+    protected Boolean isVisible;
 
     public Boolean getIsVisible() {
+        if (isVisible != null) {
+            return isVisible;
+        }
         for (Field f : getFields()) {
             if (f.getIsVisible()) {
                 return true;
             }
         }
         return false;
+    }
+
+    public void setIsVisible(Boolean isVisible) {
+        this.isVisible = isVisible;
     }
 
     public String getTitle() {
@@ -148,6 +156,22 @@ public class FieldGroup {
 
     public void setFields(Set<Field> fields) {
         this.fields = fields;
+    }
+
+    public boolean isMasterFieldGroup() {
+        if (getTitle() != null && getTitle().toLowerCase().contains("master")) {
+            return true;
+        }
+        return false;
+    }
+
+    public boolean containsFieldData() {
+        for (Field field : fields) {
+            if (field.getValue() != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

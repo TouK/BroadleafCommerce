@@ -20,11 +20,13 @@
 package org.broadleafcommerce.core.payment.service;
 
 import org.broadleafcommerce.common.time.SystemTime;
+import org.broadleafcommerce.common.util.TransactionUtils;
 import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.payment.dao.OrderPaymentDao;
 import org.broadleafcommerce.core.payment.domain.OrderPayment;
 import org.broadleafcommerce.core.payment.domain.PaymentLog;
 import org.broadleafcommerce.core.payment.domain.PaymentTransaction;
+import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,13 +40,17 @@ public class OrderPaymentServiceImpl implements OrderPaymentService {
     @Resource(name = "blOrderPaymentDao")
     protected OrderPaymentDao paymentDao;
 
+    @Resource(name = "blCustomerPaymentService")
+    protected CustomerPaymentService customerPaymentService;
+
     @Override
-    @Transactional(value = "blTransactionManager")
+    @Transactional(value = TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public OrderPayment save(OrderPayment payment) {
         return paymentDao.save(payment);
     }
 
     @Override
+    @Transactional(value = TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public PaymentTransaction save(PaymentTransaction transaction) {
         return paymentDao.save(transaction);
     }
@@ -70,6 +76,7 @@ public class OrderPaymentServiceImpl implements OrderPaymentService {
     }
 
     @Override
+    @Transactional(value = TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public void delete(OrderPayment payment) {
         paymentDao.delete(payment);
     }

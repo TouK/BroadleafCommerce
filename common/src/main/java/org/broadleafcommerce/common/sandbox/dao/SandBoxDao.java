@@ -38,9 +38,13 @@ public interface SandBoxDao {
 
     public SandBox retrieveUserSandBoxForParent(Long authorId, Long parentSandBoxId);
 
+    public SandBox retrieveSandBoxManagementById(Long sandBoxId);
+
     public SandBox retrieveNamedSandBox(SandBoxType sandboxType, String sandboxName);
 
     public Map<Long, String> retrieveAuthorNamesForSandBoxes(Set<Long> sandBoxIds);
+
+    List<SandBox> retrieveSandBoxesForAuthor(Long authorId, SandBoxType sandBoxType);
 
     public SandBox persist(SandBox entity);
 
@@ -51,12 +55,19 @@ public interface SandBoxDao {
     public SandBox createDefaultSandBox();
 
     /**
+     * @deprecated Not used in BLC.   In a Multi-site context, may return results outside of a given tenant.
      * Reads all SandBoxes that are of type {@link SandBoxType.USER} and belong to the given
      * user.
      * 
      * @param authorId
      * @return a list of SandBox belonging to the user
      */
-    public List<SandBox> retrieveAllUserSandBoxes(Long authorId);
+    @Deprecated
+    List<SandBox> retrieveAllUserSandBoxes(Long authorId);
 
+    SandBox merge(SandBox userSandBox);
+
+    List<SandBox> retrieveChildSandBoxesByParentId(Long parentSandBoxId);
+
+    SandBox retrieveNamedSandBox(SandBoxType sandBoxType, String sandboxName, Long authorId);
 }

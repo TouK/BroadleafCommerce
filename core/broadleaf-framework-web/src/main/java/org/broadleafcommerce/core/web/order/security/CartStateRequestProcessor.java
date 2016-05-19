@@ -22,6 +22,8 @@ package org.broadleafcommerce.core.web.order.security;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
+import org.broadleafcommerce.common.extension.ExtensionResultHolder;
+import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.web.AbstractBroadleafWebRequestProcessor;
 import org.broadleafcommerce.common.web.BroadleafWebRequestProcessor;
 import org.broadleafcommerce.core.order.domain.Order;
@@ -73,6 +75,9 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
 
     private final String mergeCartResponseKey = "bl_merge_cart_response";
 
+    @Resource(name = "blCartStateRequestProcessorExtensionManager")
+    protected CartStateRequestProcessorExtensionManager extensionManager;
+
     @Resource(name = "blOrderService")
     protected OrderService orderService;
 
@@ -100,31 +105,40 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
         Customer customer = CustomerState.getCustomer();
 
         if (customer == null) {
-            LOG.warn("No customer was found on the current request, no cart will be added to the current request. Ensure that the"
+            LOG.info("No customer was found on the current request, no cart will be added to the current request. Ensure that the"
                     + " blCustomerStateFilter occurs prior to the blCartStateFilter");
             return;
         }
 
-        Order cart = getOverrideCart(request);
+        ExtensionResultHolder<Order> erh = new ExtensionResultHolder<Order>();
+        extensionManager.getProxy().lookupOrCreateCart(request, customer, erh);
 
-        if (cart == null && mergeCartNeeded(customer, request)) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Merge cart required, calling mergeCart " + customer.getId());
-            }
-            cart = mergeCart(customer, request);
-        } else if (cart == null) {
-            cart = orderService.findCartForCustomer(customer);
-        }
-
-        if (cart == null) {
-            cart = orderService.getNullOrder();
+        Order cart;
+        if (erh.getResult() != null) {
+            cart = erh.getResult();
         } else {
-            updateCartService.updateAndValidateCart(cart);
+            cart = getOverrideCart(request);
+
+            if (cart == null && mergeCartNeeded(customer, request)) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Merge cart required, calling mergeCart " + customer.getId());
+                }
+                cart = mergeCart(customer, request);
+            } else if (cart == null) {
+                cart = orderService.findCartForCustomer(customer);
+            }
+
+            if (cart == null) {
+                cart = orderService.getNullOrder();
+            } else {
+                updateCartService.updateAndValidateCart(cart);
+            }
         }
 
         request.setAttribute(cartRequestAttributeName, cart, WebRequest.SCOPE_REQUEST);
 
         // Setup cart for content rule processing
+        @SuppressWarnings("unchecked")
         Map<String, Object> ruleMap = (Map<String, Object>) request.getAttribute(BLC_RULE_MAP_PARAM, WebRequest.SCOPE_REQUEST);
         if (ruleMap == null) {
             ruleMap = new HashMap<String, Object>();
@@ -139,7 +153,10 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
     }
     
     public Order getOverrideCart(WebRequest request) {
-        Long orderId = (Long) request.getAttribute(OVERRIDE_CART_ATTR_NAME, WebRequest.SCOPE_GLOBAL_SESSION);
+        Long orderId = null;
+        if (BLCRequestUtils.isOKtoUseSession(request)) {
+            orderId = (Long) request.getAttribute(OVERRIDE_CART_ATTR_NAME, WebRequest.SCOPE_GLOBAL_SESSION);
+        }
         Order cart = null;
         if (orderId != null) {
             cart = orderService.findOrderById(orderId);
@@ -154,6 +171,10 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
         return cart;
     }
     
+    /**
+     * Returns true if the given <b>customer</b> is different than the previous anonymous customer, implying that this is
+     * the logged in customer and we need to merge the carts
+     */
     public boolean mergeCartNeeded(Customer customer, WebRequest request) {
         // When the user is a CSR, we want to disable cart merging
         if (crossAppAuthService != null && crossAppAuthService.isAuthedFromAdmin()) {
@@ -164,6 +185,10 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
         return (anonymousCustomer != null && customer.getId() != null && !customer.getId().equals(anonymousCustomer.getId()));
     }
 
+    /**
+     * Looks up the anonymous customer and merges that cart with the cart from the given logged in <b>customer</b>. This
+     * will also remove the customer from session after it has finished since it is no longer needed
+     */
     public Order mergeCart(Customer customer, WebRequest request) {
         Customer anonymousCustomer = customerStateRequestProcessor.getAnonymousCustomer(request);
         MergeCartResponse mergeCartResponse;
@@ -176,13 +201,15 @@ public class CartStateRequestProcessor extends AbstractBroadleafWebRequestProces
             throw new RuntimeException(e);
         }
         
-        // The anonymous customer from session is no longer needed; it can be safely removed
-        request.removeAttribute(CustomerStateRequestProcessor.getAnonymousCustomerSessionAttributeName(),
-                WebRequest.SCOPE_GLOBAL_SESSION);
-        request.removeAttribute(CustomerStateRequestProcessor.getAnonymousCustomerIdSessionAttributeName(),
-                WebRequest.SCOPE_GLOBAL_SESSION);
+        if (BLCRequestUtils.isOKtoUseSession(request)) {
+            // The anonymous customer from session is no longer needed; it can be safely removed
+            request.removeAttribute(CustomerStateRequestProcessor.getAnonymousCustomerSessionAttributeName(),
+                    WebRequest.SCOPE_GLOBAL_SESSION);
+            request.removeAttribute(CustomerStateRequestProcessor.getAnonymousCustomerIdSessionAttributeName(),
+                    WebRequest.SCOPE_GLOBAL_SESSION);
 
-        request.setAttribute(mergeCartResponseKey, mergeCartResponse, WebRequest.SCOPE_GLOBAL_SESSION);
+            request.setAttribute(mergeCartResponseKey, mergeCartResponse, WebRequest.SCOPE_GLOBAL_SESSION);
+        }
         return mergeCartResponse.getOrder();
     }
 

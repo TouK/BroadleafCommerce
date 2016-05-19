@@ -26,8 +26,9 @@ import org.broadleafcommerce.core.catalog.domain.ProductOption;
 import org.broadleafcommerce.core.catalog.domain.ProductOptionValue;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.domain.SkuFee;
+import org.broadleafcommerce.core.catalog.domain.dto.AssignedProductOptionDTO;
 import org.broadleafcommerce.core.catalog.service.type.ProductType;
-import org.broadleafcommerce.core.search.domain.ProductSearchCriteria;
+import org.broadleafcommerce.core.search.domain.SearchCriteria;
 
 import java.util.Date;
 import java.util.List;
@@ -38,6 +39,8 @@ public interface CatalogService {
     public Product saveProduct(Product product);
 
     public Product findProductById(Long productId);
+    
+    public Product findProductByExternalId(String externalId);
 
     public List<Product> findProductsByName(String searchName);
 
@@ -60,6 +63,7 @@ public interface CatalogService {
      * @param currentDate
      * @return
      */
+    @Deprecated
     public List<Product> findActiveProductsByCategory(Category category, Date currentDate);
     
     /**
@@ -69,31 +73,31 @@ public interface CatalogService {
      * @param searchCriteria
      * @return the matching products
      */
-    public List<Product> findFilteredActiveProductsByCategory(Category category, ProductSearchCriteria searchCriteria);
+    public List<Product> findFilteredActiveProductsByCategory(Category category, SearchCriteria searchCriteria);
 
     /**
-     * @deprecated Use {@link #findFilteredActiveProductsByCategory(Category, ProductSearchCriteria)}
+     * @deprecated Use {@link #findFilteredActiveProductsByCategory(Category, SearchCriteria)}
      * 
      * @param category
      * @param currentDate
      * @param searchCriteria
      * @return
      */
-    public List<Product> findFilteredActiveProductsByCategory(Category category, Date currentDate, ProductSearchCriteria searchCriteria);
+    public List<Product> findFilteredActiveProductsByCategory(Category category, Date currentDate, SearchCriteria searchCriteria);
     
     /**
-     * Given a search query and a ProductSearchCriteria, returns the appropriate matching products
+     * Given a search query and a SearchCriteria, returns the appropriate matching products
      * 
      * @param query
      * @param searchCriteria
      * @return the matching products
      */
-    public List<Product> findFilteredActiveProductsByQuery(String query, ProductSearchCriteria searchCriteria);
+    public List<Product> findFilteredActiveProductsByQuery(String query, SearchCriteria searchCriteria);
 
     /**
-     * @deprecated Use {@link #findFilteredActiveProductsByCategory(Category, ProductSearchCriteria)}
+     * @deprecated Use {@link #findFilteredActiveProductsByCategory(Category, SearchCriteria)}
      */
-    public List<Product> findFilteredActiveProductsByQuery(String query, Date currentDate, ProductSearchCriteria searchCriteria);
+    public List<Product> findFilteredActiveProductsByQuery(String query, Date currentDate, SearchCriteria searchCriteria);
 
     /**
      * Same as {@link #findActiveProductsByCategory(Category)} but allowing for pagination.
@@ -108,6 +112,7 @@ public interface CatalogService {
     /**
      * @deprecated Use {@link #findActiveProductsByCategory(Category, limit, offset}
      */
+    @Deprecated
     public List<Product> findActiveProductsByCategory(Category category, Date currentDate, int limit, int offset);
 
     /**
@@ -129,7 +134,11 @@ public interface CatalogService {
 
     public void removeProduct(Product product);
 
+    public void removeSku(Sku sku);
+
     public Category findCategoryById(Long categoryId);
+
+    public Category findCategoryByExternalId(String externalId);
 
     /**
      * Retrieve a {@code Category} instance based on its name property.
@@ -185,6 +194,16 @@ public interface CatalogService {
 
     public Sku findSkuById(Long skuId);
 
+    public Sku findSkuByExternalId(String externalId);
+
+    /**
+     * Method to look up a Sku by the Universal Product Code (UPC).
+     * 
+     * @param upc
+     * @return
+     */
+    public Sku findSkuByUpc(String upc);
+
     /**
      * Get a hierarchical map of all child categories keyed on the url
      *
@@ -236,5 +255,32 @@ public interface CatalogService {
      * @return
      */    
     public Product findProductByURI(String uri);
+    
+    /**
+     * Returns a sku associated with the passed in URI or null if no sku is
+     * mapped to this URI.
+     * 
+     * @param uri
+     * @return
+     */    
+    public Sku findSkuByURI(String uri);
+
+    /**
+     * Returns a list of {@link org.broadleafcommerce.core.catalog.domain.dto.AssignedProductOptionDTO}
+     * found for given the productId.
+     *
+     * @param productId
+     * @return
+     */
+    public List<AssignedProductOptionDTO> findAssignedProductOptionsByProductId(Long productId);
+
+    /**
+     * Returns a list of {@link org.broadleafcommerce.core.catalog.domain.dto.AssignedProductOptionDTO}
+     * found for given the {@link org.broadleafcommerce.core.catalog.domain.Product}.
+     *
+     * @param product
+     * @return
+     */
+    public List<AssignedProductOptionDTO> findAssignedProductOptionsByProduct(Product product);
 
 }

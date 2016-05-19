@@ -23,6 +23,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
 import org.broadleafcommerce.common.audit.Auditable;
 import org.broadleafcommerce.common.audit.AuditableListener;
+import org.broadleafcommerce.common.copy.CreateResponse;
+import org.broadleafcommerce.common.copy.MultiTenantCopyContext;
 import org.broadleafcommerce.common.currency.domain.BroadleafCurrency;
 import org.broadleafcommerce.common.currency.domain.BroadleafCurrencyImpl;
 import org.broadleafcommerce.common.currency.util.BroadleafCurrencyUtils;
@@ -342,7 +344,10 @@ public class OrderImpl implements Order, AdminMainEntity, CurrencyCodeIdentifiab
         }
         Money totalPayments = BroadleafCurrencyUtils.getMoney(BigDecimal.ZERO, getCurrency());
         for (OrderPayment payment : getPayments()) {
-            if (payment.isActive() && payment.getAmount() != null) {
+            //add up all active payments that are not UNCONFIRMED Final Payments
+            if (payment.isActive() && payment.getAmount() != null && !payment.isFinalPayment()) {
+                totalPayments = totalPayments.add(payment.getAmount());
+            } else if (payment.isActive() && payment.getAmount() != null && payment.isFinalPayment() && payment.isConfirmed()) {
                 totalPayments = totalPayments.add(payment.getAmount());
             }
         }
@@ -739,7 +744,7 @@ public class OrderImpl implements Order, AdminMainEntity, CurrencyCodeIdentifiab
         if (obj == null) {
             return false;
         }
-        if (getClass() != obj.getClass()) {
+        if (!getClass().isAssignableFrom(obj.getClass())) {
             return false;
         }
         OrderImpl other = (OrderImpl) obj;
@@ -788,6 +793,50 @@ public class OrderImpl implements Order, AdminMainEntity, CurrencyCodeIdentifiab
     @Override
     public void setOrderMessages(List<ActivityMessageDTO> orderMessages) {
         this.orderMessages = orderMessages;
+    }
+
+    @Override
+    public <G extends Order> CreateResponse<G> createOrRetrieveCopyInstance(MultiTenantCopyContext context) throws CloneNotSupportedException {
+        CreateResponse<G> createResponse = context.createOrRetrieveCopyInstance(this);
+        if (createResponse.isAlreadyPopulated()) {
+            return createResponse;
+        }
+        Order cloned = createResponse.getClone();
+        cloned.setCurrency(getCurrency());
+        cloned.setEmailAddress(emailAddress);
+        cloned.setLocale(getLocale());
+        cloned.setName(name);
+        cloned.setOrderNumber(orderNumber);
+        cloned.setTotalTax(getTotalTax());
+        cloned.setSubmitDate(submitDate);
+        cloned.setCustomer(customer.createOrRetrieveCopyInstance(context).getClone());
+        cloned.setStatus(getStatus());
+        cloned.setTotalFulfillmentCharges(getTotalFulfillmentCharges());
+        cloned.setSubTotal(getSubTotal());
+        cloned.setTaxOverride(taxOverride);
+        for(OrderItem entry : orderItems){
+            OrderItem clonedEntry = ((OrderItemImpl)entry).createOrRetrieveCopyInstance(context).getClone();
+            clonedEntry.setOrder(cloned);
+            cloned.getOrderItems().add(clonedEntry);
+        }
+        for(Map.Entry<Offer, OfferInfo> entry : additionalOfferInformation.entrySet()){
+            Offer clonedOffer = entry.getKey().createOrRetrieveCopyInstance(context).getClone();
+            OfferInfo clonedEntry = entry.getValue().createOrRetrieveCopyInstance(context).getClone();
+            cloned.getAdditionalOfferInformation().put(clonedOffer,clonedEntry);
+        }
+        for(Map.Entry<String,OrderAttribute> entry : orderAttributes.entrySet()){
+            OrderAttribute clonedAttribute = entry.getValue().createOrRetrieveCopyInstance(context).getClone();
+            clonedAttribute.setOrder(cloned);
+            cloned.getOrderAttributes().put(entry.getKey(),clonedAttribute);
+        }
+        // dont clone
+
+       for(OfferCode entry : addedOfferCodes){
+           OfferCode clonedEntry = entry.createOrRetrieveCopyInstance(context).getClone();
+           cloned.getAddedOfferCodes().add(clonedEntry);
+       }
+
+        return  createResponse;
     }
 
     public static class Presentation {

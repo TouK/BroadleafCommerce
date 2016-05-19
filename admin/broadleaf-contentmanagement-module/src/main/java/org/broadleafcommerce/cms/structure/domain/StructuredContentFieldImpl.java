@@ -19,6 +19,21 @@
  */
 package org.broadleafcommerce.cms.structure.domain;
 
+import org.broadleafcommerce.common.copy.CreateResponse;
+import org.broadleafcommerce.common.copy.MultiTenantCopyContext;
+import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransform;
+import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMember;
+import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
+import org.broadleafcommerce.common.extensibility.jpa.copy.ProfileEntity;
+import org.broadleafcommerce.common.presentation.AdminPresentation;
+import org.broadleafcommerce.openadmin.audit.AdminAuditable;
+import org.broadleafcommerce.openadmin.audit.AdminAuditableListener;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Parameter;
+import org.hibernate.annotations.Type;
+
 import javax.persistence.Column;
 import javax.persistence.Embedded;
 import javax.persistence.Entity;
@@ -27,20 +42,8 @@ import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
-import javax.persistence.JoinColumn;
 import javax.persistence.Lob;
-import javax.persistence.ManyToOne;
 import javax.persistence.Table;
-
-import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransform;
-import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMember;
-import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
-import org.broadleafcommerce.common.presentation.AdminPresentation;
-import org.broadleafcommerce.openadmin.audit.AdminAuditable;
-import org.broadleafcommerce.openadmin.audit.AdminAuditableListener;
-import org.hibernate.annotations.GenericGenerator;
-import org.hibernate.annotations.Parameter;
-import org.hibernate.annotations.Type;
 
 /**
  * Created by bpolster.
@@ -50,9 +53,10 @@ import org.hibernate.annotations.Type;
 @Table(name = "BLC_SC_FLD")
 @EntityListeners(value = { AdminAuditableListener.class })
 @DirectCopyTransform({
-        @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.SANDBOX, skipOverlaps=true)
+        @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.SANDBOX, skipOverlaps = true),
+        @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.MULTITENANT_SITE)
 })
-public class StructuredContentFieldImpl implements StructuredContentField {
+public class StructuredContentFieldImpl implements StructuredContentField, ProfileEntity {
 
     private static final long serialVersionUID = 1L;
 
@@ -138,5 +142,31 @@ public class StructuredContentFieldImpl implements StructuredContentField {
     public void setAuditable(AdminAuditable auditable) {
         this.auditable = auditable;
     }
-}
+    
+    @Override
+    public StructuredContentField clone() {
+        StructuredContentField clone = null;
 
+        try {
+            clone = (StructuredContentField) Class.forName(this.getClass().getName()).newInstance();
+            clone.setFieldKey(getFieldKey());
+            clone.setValue(getValue());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        return clone;
+    }
+
+    @Override
+    public <G extends StructuredContentField> CreateResponse<G> createOrRetrieveCopyInstance(MultiTenantCopyContext context) throws CloneNotSupportedException {
+        CreateResponse<G> createResponse = context.createOrRetrieveCopyInstance(this);
+        if (createResponse.isAlreadyPopulated()) {
+            return createResponse;
+        }
+        StructuredContentField cloned = createResponse.getClone();
+        cloned.setFieldKey(fieldKey);
+        cloned.setValue(this.getValue());
+        return createResponse;
+    }
+}

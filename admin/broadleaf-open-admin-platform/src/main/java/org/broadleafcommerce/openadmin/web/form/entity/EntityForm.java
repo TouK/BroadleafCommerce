@@ -25,6 +25,7 @@ import org.apache.commons.lang3.builder.CompareToBuilder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.openadmin.dto.SectionCrumb;
 import org.broadleafcommerce.openadmin.web.form.component.ListGrid;
 
@@ -43,7 +44,7 @@ import java.util.TreeSet;
 public class EntityForm {
 
     protected static final Log LOG = LogFactory.getLog(EntityForm.class);
-    
+
     public static final String HIDDEN_GROUP = "hiddenGroup";
     public static final String MAP_KEY_GROUP = "keyGroup";
     public static final String DEFAULT_GROUP_NAME = "Default";
@@ -59,7 +60,24 @@ public class EntityForm {
     protected String mainEntityName;
     protected String sectionKey;
     protected Boolean readOnly = false;
+
+    /**
+     * special member used for only for a Translation entity form. Set at the controller, in order to populate a hidden field in the form
+     * indicating that there were errors and the form should not be allowed to submit.
+     */
+    protected Boolean preventSubmit = false;
+
+    /**
+     * a string representation of a Javascript object containing a map of fields => errors
+     * Useful when filling a translation form, as the (only) way to determine to which fields error messaging needs to be attached
+     */
+    protected String jsErrorMap;
+
+    protected String translationCeilingEntity;
+    protected String translationId;
+
     protected Set<Tab> tabs = new TreeSet<Tab>(new Comparator<Tab>() {
+
         @Override
         public int compare(Tab o1, Tab o2) {
             return new CompareToBuilder()
@@ -72,16 +90,16 @@ public class EntityForm {
 
     // This is used to data-bind when this entity form is submitted
     protected Map<String, Field> fields = null;
-    
+
     // This is used in cases where there is a sub-form on this page that is dynamically
     // rendered based on other values on this entity form. It is keyed by the name of the
     // property that drives the dynamic form.
     protected Map<String, EntityForm> dynamicForms = new LinkedHashMap<String, EntityForm>();
-    
+
     // These values are used when dynamic forms are in play. They are not rendered to the client,
     // but they can be used when performing actions on the submit event
     protected Map<String, DynamicEntityFormInfo> dynamicFormInfos = new LinkedHashMap<String, DynamicEntityFormInfo>();
-    
+
     protected List<EntityFormAction> actions = new ArrayList<EntityFormAction>();
 
     protected Map<String, Object> attributes = new HashMap<String, Object>();
@@ -109,13 +127,13 @@ public class EntityForm {
             }
             fields = map;
         }
-        
+
         for (Entry<String, EntityForm> entry : dynamicForms.entrySet()) {
             Map<String, Field> dynamicFormFields = entry.getValue().getFields();
             for (Entry<String, Field> dynamicField : dynamicFormFields.entrySet()) {
                 if (fields.containsKey(dynamicField.getKey())) {
                     LOG.info("Excluding dynamic field " + dynamicField.getKey() + " as there is already an occurrance in" +
-                    		" this entityForm");
+                            " this entityForm");
                 } else {
                     fields.put(dynamicField.getKey(), dynamicField.getValue());
                 }
@@ -124,7 +142,7 @@ public class EntityForm {
 
         return fields;
     }
-    
+
     /**
      * Clears out the cached 'fields' variable which is used to render the form on the frontend. Use this method
      * if you want to force the entityForm to rebuild itself based on the tabs and groups that have been assigned and 
@@ -133,7 +151,7 @@ public class EntityForm {
     public void clearFieldsMap() {
         fields = null;
     }
-    
+
     public List<ListGrid> getAllListGrids() {
         List<ListGrid> list = new ArrayList<ListGrid>();
         for (Tab tab : tabs) {
@@ -143,7 +161,7 @@ public class EntityForm {
         }
         return list;
     }
-    
+
     /**
      * Convenience method for grabbing a grid by its collection field name. This is very similar to {@link #findField(String)}
      * but differs in that this only searches through the sub collections for the current entity
@@ -168,7 +186,7 @@ public class EntityForm {
         }
         return null;
     }
-    
+
     public Tab findTabForField(String fieldName) {
         fieldName = sanitizeFieldName(fieldName);
         for (Tab tab : tabs) {
@@ -196,7 +214,7 @@ public class EntityForm {
         }
         return null;
     }
-    
+
     /**
      * Since this field name could come from the frontend (where all fields are referenced like fields[name].value,
      * we need to strip that part out to look up the real field name in this entity
@@ -231,18 +249,18 @@ public class EntityForm {
         if (fieldToRemove != null) {
             containingGroup.removeField(fieldToRemove);
         }
-        
+
         if (fields != null) {
             fieldToRemove = fields.remove(fieldName);
         }
-        
+
         return fieldToRemove;
     }
-    
+
     public void removeTab(Tab tab) {
         tabs.remove(tab);
     }
-    
+
     public void removeTab(String tabName) {
         if (tabs != null) {
             Iterator<Tab> tabIterator = tabs.iterator();
@@ -254,6 +272,7 @@ public class EntityForm {
             }
         }
     }
+
     public ListGrid removeListGrid(String subCollectionFieldName) {
         ListGrid lgToRemove = null;
         Tab containingTab = null;
@@ -273,11 +292,11 @@ public class EntityForm {
         if (lgToRemove != null) {
             containingTab.removeListGrid(lgToRemove);
         }
-        
-        if (containingTab.getListGrids().size() == 0 && containingTab.getFields().size() == 0) {
+
+        if (containingTab != null && containingTab.getListGrids().size() == 0 && containingTab.getFields().size() == 0) {
             removeTab(containingTab);
         }
-        
+
         return lgToRemove;
     }
 
@@ -302,6 +321,15 @@ public class EntityForm {
         tabName = tabName == null ? DEFAULT_TAB_NAME : tabName;
         tabOrder = tabOrder == null ? DEFAULT_TAB_ORDER : tabOrder;
 
+        // Tabs and groups should be looked up by their display, translated name since 2 unique strings can display the same
+        // thing when they are looked up in message bundles after display
+        // When displayed on the form the duplicate groups and tabs look funny
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext();
+        if (context != null && context.getMessageSource() != null) {
+            groupName = context.getMessageSource().getMessage(groupName, null, groupName, context.getJavaLocale());
+            tabName = context.getMessageSource().getMessage(tabName, null, tabName, context.getJavaLocale());
+        }
+
         Tab tab = findTab(tabName);
         if (tab == null) {
             tab = new Tab();
@@ -322,6 +350,11 @@ public class EntityForm {
     }
 
     public void addListGrid(ListGrid listGrid, String tabName, Integer tabOrder) {
+        // Tabs should be looked up and referenced by their display name
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext();
+        if (context != null && context.getMessageSource() != null) {
+            tabName = context.getMessageSource().getMessage(tabName, null, tabName, context.getJavaLocale());
+        }
         Tab tab = findTab(tabName);
         if (tab == null) {
             tab = new Tab();
@@ -349,35 +382,43 @@ public class EntityForm {
     public void addAction(EntityFormAction action) {
         actions.add(action);
     }
-    
+
     public void removeAction(EntityFormAction action) {
         actions.remove(action);
     }
-    
+
     public void removeAllActions() {
         actions.clear();
     }
-    
+
     public EntityForm getDynamicForm(String name) {
         return getDynamicForms().get(name);
     }
-    
+
     public void putDynamicForm(String name, EntityForm ef) {
         getDynamicForms().put(name, ef);
     }
-    
+
     public DynamicEntityFormInfo getDynamicFormInfo(String name) {
         return getDynamicFormInfos().get(name);
     }
-    
+
     public void putDynamicFormInfo(String name, DynamicEntityFormInfo info) {
         getDynamicFormInfos().put(name, info);
     }
-    
+
     public Boolean getReadOnly() {
         return readOnly;
     }
-    
+
+    public Boolean getPreventSubmit() {
+        return preventSubmit;
+    }
+
+    public void setPreventSubmit() {
+        this.preventSubmit = true;
+    }
+
     public void setReadOnly() {
         setReadOnly(true);
     }
@@ -388,34 +429,34 @@ public class EntityForm {
                 entry.getValue().setReadOnly(readOnly);
             }
         }
-        
+
         if (getAllListGrids() != null) {
             for (ListGrid lg : getAllListGrids()) {
                 lg.setReadOnly(readOnly);
             }
         }
-        
+
         if (getDynamicForms() != null) {
             for (Entry<String, EntityForm> entry : getDynamicForms().entrySet()) {
                 entry.getValue().setReadOnly(readOnly);
             }
         }
-        
+
         actions.clear();
         this.readOnly = readOnly;
     }
-    
+
     public List<EntityFormAction> getActions() {
         List<EntityFormAction> clonedActions = new ArrayList<EntityFormAction>(actions);
         Collections.reverse(clonedActions);
         return Collections.unmodifiableList(clonedActions);
     }
-    
+
     public FieldGroup collapseToOneFieldGroup() {
         Tab newTab = new Tab();
         FieldGroup newFg = new FieldGroup();
         newTab.getFieldGroups().add(newFg);
-        
+
         for (Tab tab : getTabs()) {
             for (FieldGroup fg : tab.getFieldGroups()) {
                 for (Field field : fg.getFields()) {
@@ -423,13 +464,29 @@ public class EntityForm {
                 }
             }
         }
-        
+
         getTabs().clear();
         getTabs().add(newTab);
-        
+
         return newFg;
     }
-    
+
+    public String getTranslationCeilingEntity() {
+        return translationCeilingEntity == null ? ceilingEntityClassname : translationCeilingEntity;
+    }
+
+    public void setTranslationCeilingEntity(String translationCeilingEntity) {
+        this.translationCeilingEntity = translationCeilingEntity;
+    }
+
+    public String getTranslationId() {
+        return translationId == null ? id : translationId;
+    }
+
+    public void setTranslationId(String translationId) {
+        this.translationId = translationId;
+    }
+
     /* *********************** */
     /* GENERIC GETTERS/SETTERS */
     /* *********************** */
@@ -453,7 +510,7 @@ public class EntityForm {
     public String getIdProperty() {
         return idProperty;
     }
-    
+
     public void setIdProperty(String idProperty) {
         this.idProperty = idProperty;
     }
@@ -473,11 +530,11 @@ public class EntityForm {
     public void setEntityType(String entityType) {
         this.entityType = entityType;
     }
-    
+
     public String getMainEntityName() {
         return StringUtils.isBlank(mainEntityName) ? "" : mainEntityName;
     }
-    
+
     public void setMainEntityName(String mainEntityName) {
         this.mainEntityName = mainEntityName;
     }
@@ -485,11 +542,11 @@ public class EntityForm {
     public String getSectionKey() {
         return sectionKey.charAt(0) == '/' ? sectionKey : '/' + sectionKey;
     }
-    
+
     public void setSectionKey(String sectionKey) {
         this.sectionKey = sectionKey;
     }
-    
+
     public Set<Tab> getTabs() {
         return tabs;
     }
@@ -505,7 +562,7 @@ public class EntityForm {
     public void setDynamicForms(Map<String, EntityForm> dynamicForms) {
         this.dynamicForms = dynamicForms;
     }
-    
+
     public Map<String, DynamicEntityFormInfo> getDynamicFormInfos() {
         return dynamicFormInfos;
     }
@@ -554,20 +611,28 @@ public class EntityForm {
             sb.append(section.getSectionIdentifier());
             sb.append("--");
             sb.append(section.getSectionId());
-            if (index < sectionCrumbs.size()-1) {
+            if (index < sectionCrumbs.size() - 1) {
                 sb.append(",");
             }
             index++;
         }
         return sb.toString();
     }
-    
+
     public Map<String, Object> getAttributes() {
         return attributes;
     }
-    
+
     public void setAttributes(Map<String, Object> attributes) {
         this.attributes = attributes;
     }
-    
+
+    public String getJsErrorMap() {
+        return jsErrorMap;
+    }
+
+    public void setJsErrorMap(String jsErrorMap) {
+        this.jsErrorMap = jsErrorMap;
+    }
+
 }

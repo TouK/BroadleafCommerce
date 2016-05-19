@@ -22,7 +22,7 @@ package org.broadleafcommerce.core.catalog.dao;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.domain.ProductBundle;
 import org.broadleafcommerce.core.catalog.service.type.ProductType;
-import org.broadleafcommerce.core.search.domain.ProductSearchCriteria;
+import org.broadleafcommerce.core.search.domain.SearchCriteria;
 
 import java.util.Date;
 import java.util.List;
@@ -45,6 +45,8 @@ public interface ProductDao {
      */
     @Nonnull
     public Product readProductById(@Nonnull Long productId);
+    
+    public Product readProductByExternalId(String externalId);
     
     /**
      * Retrieves a list of Product instances by their primary keys
@@ -111,7 +113,7 @@ public interface ProductDao {
      * @return the matching products
      */
     @Nonnull
-    public List<Product> readFilteredActiveProductsByCategory(Long categoryId, ProductSearchCriteria searchCriteria);
+    public List<Product> readFilteredActiveProductsByCategory(Long categoryId, SearchCriteria searchCriteria);
 
     /**
      * Find all products whose start and end dates are before and after the passed in 
@@ -123,12 +125,12 @@ public interface ProductDao {
      * @return the matching products
      */
     @Nonnull
-    public List<Product> readFilteredActiveProductsByQuery(String query, ProductSearchCriteria searchCriteria);
+    public List<Product> readFilteredActiveProductsByQuery(String query, SearchCriteria searchCriteria);
 
 
 
     /**
-     * @deprecated Use {@link #readFilteredActiveProductsByCategory(Long, ProductSearchCriteria)}
+     * @deprecated Use {@link #readFilteredActiveProductsByCategory(Long, SearchCriteria)}
      * 
      * Find all products whose start and end dates are before and after the passed in
      * date, who are related to the given category, match the given search criteria, and 
@@ -139,8 +141,9 @@ public interface ProductDao {
      * @param searchCriteria
      * @return the matching products
      */
+    @Deprecated
     @Nonnull
-    public List<Product> readFilteredActiveProductsByCategory(Long categoryId, Date currentDate, ProductSearchCriteria searchCriteria);
+    public List<Product> readFilteredActiveProductsByCategory(Long categoryId, Date currentDate, SearchCriteria searchCriteria);
     
     /**
      * @deprecated Use {@link #readActiveProductsByCategory(Long)}
@@ -152,11 +155,12 @@ public interface ProductDao {
      * @param currentDate the date for which the products should be checked against to determine their active state
      * @return the list of products qualified for the category and date
      */
+    @Deprecated
     @Nonnull
     public List<Product> readActiveProductsByCategory(@Nonnull Long categoryId, @Nonnull Date currentDate);
 
     /**
-     * @deprecated Use {@link #readFilteredActiveProductsByQuery(String, ProductSearchCriteria)}
+     * @deprecated Use {@link #readFilteredActiveProductsByQuery(String, SearchCriteria)}
      * Find all products whose start and end dates are before and after the passed in 
      * date, who match the search string, match the given search criteria, and are not
      * marked as archived.
@@ -166,12 +170,14 @@ public interface ProductDao {
      * @param searchCriteria
      * @return the matching products
      */
+    @Deprecated
     @Nonnull
-    public List<Product> readFilteredActiveProductsByQuery(String query, Date currentDate, ProductSearchCriteria searchCriteria);
+    public List<Product> readFilteredActiveProductsByQuery(String query, Date currentDate, SearchCriteria searchCriteria);
 
     /**
      * @deprecated Use {@link #readActiveProductsByCategory(Long)}
      */
+    @Deprecated
     @Nonnull
     public List<Product> readActiveProductsByCategory(@Nonnull Long categoryId, @Nonnull Date currentDate, @Nonnull int limit, @Nonnull int offset);
 
@@ -256,6 +262,7 @@ public interface ProductDao {
      * @param currentDate
      * @return a list of all active products
      */
+    @Deprecated
     public List<Product> readAllActiveProducts(@Nonnull Date currentDate);
 
     /**
@@ -264,7 +271,9 @@ public interface ProductDao {
      * 
      * It will fetch results in pages. For example, if page = 3 and pageSize = 25, this method would
      * return rows 75-99 from the database.
-     * 
+     *
+     * When possible, it is suggested to use {@link #readAllActiveProducts(Integer, Long)} instead for performance.
+     *
      * @param page - the number of the page to get (0 indexed)
      * @param pageSize - the number of results per page
      * @return a list of active products for the given page
@@ -272,13 +281,27 @@ public interface ProductDao {
     public List<Product> readAllActiveProducts(int page, int pageSize);
 
     /**
-     * @deprecated Use {@link #readAllActiveProducts(page, pageSize)}
+     * Reads all products from the database that are currently active. This method utilizes efficient
+     * paging to retrieve a subset of records. This approach does not use an offset technique (like {@link #readAllActiveProducts(int, int)},
+     * but rather limits the retrieved records to those greater than the given id and returns a max results of pageSize. This
+     * is more efficient that using an offset, since the database will not have to retrieve all the records from the beginning
+     * of the table and trim the offset.
+     *
+     * @param pageSize the number of results per page
+     * @param lastId the last id from the previous page - can be null if this is the first page request
+     * @return a list of active products for the given page
+     */
+    List<Product> readAllActiveProducts(Integer pageSize, Long lastId);
+
+    /**
+     * @deprecated Use {@link #readAllActiveProducts(int, int)}
      * 
      * @param page - the number of the page to get (0 indexed)
      * @param pageSize - the number of results per page
      * @param currentDate
      * @return a list of active products for the given page
      */
+    @Deprecated
     public List<Product> readAllActiveProducts(int page, int pageSize, Date currentDate);
 
     /**
@@ -289,11 +312,12 @@ public interface ProductDao {
     public Long readCountAllActiveProducts();
 
     /**
-     * @deprecated {@link #readActiveProductCount()}
+     * @deprecated {@link #readCountAllActiveProducts()}
      * 
      * @param currentDate
      * @return the number of currently active products
      */
+    @Deprecated
     public Long readCountAllActiveProducts(Date currentDate);
 
     /**

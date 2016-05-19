@@ -60,4 +60,34 @@ public class DynamicSkuPrices implements Serializable {
         this.priceAdjustment = priceAdjustment;
     }
 
+    /**
+     * The out of box implementation returns {@link #getPrice()}.   Intended as a hook for
+     * advanced pricing considerations like those in BLC Enterprise pricing.
+     * 
+     * @param quantity
+     * @param currentPrice
+     * @return
+     */
+    public Money getPriceForQuantity(long quantity) {
+        return getPrice();
+    }
+
+    /**
+     * Returns the lower of {@link #getSalePrice()} and {@link #getRetailPrice()}.  Intended as a hook for
+     * advanced pricing considerations like those in BLC Enterprise pricing.
+     * @return
+     */
+    public Money getPrice() {
+        if (getSalePrice() == null) {
+            return getRetailPrice();
+        }
+        if (getRetailPrice() != null) {
+            if (getRetailPrice().lessThan(getSalePrice())) {
+                return getRetailPrice();
+            }
+        }
+
+        return getSalePrice();
+    }
+
 }

@@ -19,6 +19,7 @@
  */
 package org.broadleafcommerce.cms.file.service;
 
+import org.apache.commons.io.FileExistsException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
@@ -30,6 +31,8 @@ import org.broadleafcommerce.cms.file.dao.StaticAssetStorageDao;
 import org.broadleafcommerce.cms.file.domain.StaticAsset;
 import org.broadleafcommerce.cms.file.domain.StaticAssetStorage;
 import org.broadleafcommerce.cms.file.service.operation.NamedOperationManager;
+import org.broadleafcommerce.common.extension.ExtensionResultHolder;
+import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 import org.broadleafcommerce.common.file.service.BroadleafFileService;
 import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
@@ -89,36 +92,13 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
     @Resource(name="blNamedOperationManager")
     protected NamedOperationManager namedOperationManager;
 
+    @Resource(name = "blStaticAssetServiceExtensionManager")
+    protected StaticAssetServiceExtensionManager extensionManager;
+
     protected StaticAsset findStaticAsset(String fullUrl) {
         StaticAsset staticAsset = staticAssetService.findStaticAssetByFullUrl(fullUrl);
 
         return staticAsset;
-    }
-
-    /**
-     * Removes trailing "/" and ensures that there is a beginning "/"
-     * @param path
-     * @return
-     */
-    protected String appendTrailingSlash(String path) {
-        if (!path.endsWith(File.separator)) {
-            path = File.separator + path;
-        }
-
-        return path;
-    }
-
-    /**
-     * Removes trailing "/" and ensures that there is a beginning "/"
-     * @param path
-     * @return
-     */
-    protected String removeLeadingSlash(String path) {
-        if (path.startsWith(File.separator)) {
-            path = path.substring(1);
-        }
-
-        return path;
     }
 
     protected boolean shouldUseSharedFile(InputStream is) {
@@ -127,7 +107,17 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
         
     protected File getFileFromLocalRepository(String cachedFileName) {
         // Look for a shared file (this represents a file that was based on a file originally in the classpath.
-        File cacheFile = broadleafFileService.getSharedLocalResource(cachedFileName);
+        File cacheFile = null;
+        if (extensionManager != null) {
+            ExtensionResultHolder holder = new ExtensionResultHolder();
+            ExtensionResultStatusType result = extensionManager.getProxy().fileExists(cachedFileName, holder);
+            if (ExtensionResultStatusType.HANDLED.equals(result)) {
+                cacheFile = (File) holder.getResult();
+            }
+        }
+        if (cacheFile == null) {
+            cacheFile = broadleafFileService.getSharedLocalResource(cachedFileName);
+        }
         if (cacheFile.exists()) {
             return cacheFile;
         } else {
@@ -188,7 +178,18 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
             is.close();
             tos.close();
 
-            FileUtils.moveFile(tmpFile, baseLocalFile);
+            // Adding protection against this file already existing / being written by another thread.
+            // Adding locks would be useless here since another VM could be executing the code. 
+            if (!baseLocalFile.exists()) {
+                try {
+                    FileUtils.moveFile(tmpFile, baseLocalFile);
+                } catch (FileExistsException e) {
+                    // No problem
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("File exists error moving file " + tmpFile.getAbsolutePath(), e);
+                    }
+                }
+            }
         } finally {
             IOUtils.closeQuietly(is);
             IOUtils.closeQuietly(tos);
@@ -351,17 +352,24 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
     @Transactional("blTransactionManagerAssetStorageInfo")
     @Override
     public void createStaticAssetStorageFromFile(MultipartFile file, StaticAsset staticAsset) throws IOException {
+        createStaticAssetStorage(file.getInputStream(), staticAsset);
+    }
+    
+    @Transactional("blTransactionManagerAssetStorageInfo")
+    @Override
+    public void createStaticAssetStorage(InputStream fileInputStream, StaticAsset staticAsset) throws IOException {
         if (StorageType.DATABASE.equals(staticAsset.getStorageType())) {
             StaticAssetStorage storage = staticAssetStorageDao.create();
             storage.setStaticAssetId(staticAsset.getId());
-            Blob uploadBlob = staticAssetStorageDao.createBlob(file);
+            Blob uploadBlob = staticAssetStorageDao.createBlob(fileInputStream, staticAsset.getFileSize());
             storage.setFileData(uploadBlob);
             staticAssetStorageDao.save(storage);
         } else if (StorageType.FILESYSTEM.equals(staticAsset.getStorageType())) {
             FileWorkArea tempWorkArea = broadleafFileService.initializeWorkArea();
-            String destFileName = tempWorkArea.getFilePathLocation() + removeLeadingSlash(staticAsset.getFullUrl());
+            // Convert the given URL from the asset to a system-specific suitable file path
+            String destFileName = FilenameUtils.normalize(tempWorkArea.getFilePathLocation() + File.separator + FilenameUtils.separatorsToSystem(staticAsset.getFullUrl()));
 
-            InputStream input = file.getInputStream();
+            InputStream input = fileInputStream;
             byte[] buffer = new byte[fileBufferSize];
 
             File destFile = new File(destFileName);

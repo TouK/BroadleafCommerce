@@ -126,7 +126,7 @@
             <xsd:enumeration value="columnWidth"/>
             <xsd:enumeration value="broadleafEnumeration"/>
             <xsd:enumeration value="readOnly"/>
-            <xsd:enumeration value="toolTip"/>
+            <xsd:enumeration value="tooltip"/>
             <xsd:enumeration value="helpText"/>
             <xsd:enumeration value="hint"/>
             <xsd:enumeration value="lookupDisplayProperty"/>
@@ -166,6 +166,7 @@
             <xsd:enumeration value="showIfProperty"/>
             <xsd:enumeration value="forceFreeFormKeys"/>
             <xsd:enumeration value="translatable"/>
+            <xsd:enumeration value="defaultValue"/>
         </xsd:restriction>
     </xsd:simpleType>
 </xsd:schema>

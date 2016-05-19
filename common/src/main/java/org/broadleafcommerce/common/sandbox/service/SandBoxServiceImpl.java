@@ -24,7 +24,9 @@ import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.sandbox.dao.SandBoxDao;
 import org.broadleafcommerce.common.sandbox.domain.SandBox;
 import org.broadleafcommerce.common.sandbox.domain.SandBoxType;
+import org.broadleafcommerce.common.util.TransactionUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,9 +64,14 @@ public class SandBoxServiceImpl implements SandBoxService {
     }
     
     @Override
+    public SandBox retrieveSandBoxManagementById(Long sandBoxId) {
+        return sandBoxDao.retrieveSandBoxManagementById(sandBoxId);
+    }
+
+    @Override
     public List<SandBox> retrievePreviewSandBoxes(Long authorId) {
         List<SandBox> returnList = new ArrayList<SandBox>();
-        List<SandBox> authorBoxes = sandBoxDao.retrieveSandBoxesForAuthor(authorId);
+        List<SandBox> authorBoxes = sandBoxDao.retrieveSandBoxesForAuthor(authorId, SandBoxType.USER);
         List<SandBox> approvalBoxes = sandBoxDao.retrieveSandBoxesByType(SandBoxType.APPROVAL);
         List<SandBox> defaultBoxes = sandBoxDao.retrieveSandBoxesByType(SandBoxType.DEFAULT);
 
@@ -117,9 +124,13 @@ public class SandBoxServiceImpl implements SandBoxService {
     
     @Override
     public synchronized SandBox createUserSandBox(Long authorId, SandBox approvalSandBox) {
-        return sandBoxDao.createUserSandBox(authorId, approvalSandBox);
+        if (checkForExistingSandbox(SandBoxType.USER, approvalSandBox.getName(), authorId)) {
+            return sandBoxDao.createUserSandBox(authorId, approvalSandBox);
+        }
+
+        return sandBoxDao.retrieveNamedSandBox(SandBoxType.USER, approvalSandBox.getName(), authorId);
     }
-    
+
     @Override
     public synchronized SandBox createDefaultSandBox() {
         return sandBoxDao.createDefaultSandBox();
@@ -131,8 +142,34 @@ public class SandBoxServiceImpl implements SandBoxService {
     }
 
     @Override
+    @Deprecated
     public List<SandBox> retrieveAllUserSandBoxes(Long authorId) {
         return sandBoxDao.retrieveAllUserSandBoxes(authorId);
     }
-    
+
+    @Override
+    @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
+    public void archiveChildSandboxes(Long parentSandBoxId) {
+        List<SandBox> childSandBoxes = retrieveChildSandBoxesByParentId(parentSandBoxId);
+        for (SandBox sandbox : childSandBoxes) {
+            sandbox.setArchived('Y');
+            sandBoxDao.merge(sandbox);
+        }
+    }
+
+    public List<SandBox> retrieveChildSandBoxesByParentId(Long parentSandBoxId) {
+        return sandBoxDao.retrieveChildSandBoxesByParentId(parentSandBoxId);
+    }
+
+    @Override
+    public boolean checkForExistingApprovalSandboxWithName(String sandboxName) {
+        return checkForExistingSandbox(SandBoxType.APPROVAL, sandboxName, null);
+    }
+
+    @Override
+    public boolean checkForExistingSandbox(SandBoxType sandBoxType, String sandboxName, Long authorId) {
+        SandBox sb = sandBoxDao.retrieveNamedSandBox(sandBoxType, sandboxName, authorId);
+        return sb == null;
+    }
+
 }

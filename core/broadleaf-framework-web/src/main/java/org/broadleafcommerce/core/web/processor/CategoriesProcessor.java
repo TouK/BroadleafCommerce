@@ -30,14 +30,19 @@ import org.thymeleaf.Arguments;
 import org.thymeleaf.dom.Element;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javax.annotation.Resource;
 
 /**
  * A Thymeleaf processor that will add the desired categories to the model. It does this by
- * searching for the parentCategory name and adding up to maxResults subcategories under
- * the model attribute specified by resultVar
+ * searching for the <b>parentCategory</b> by name> and adding up to <b>maxResults</b> subcategories under
+ * the model attribute specified by <b>resultVar</b>
+ * 
+ * @param parentCategory (required) the name of the parent category to get subcategories from
+ * @param resultVar (required) the model variable that the resulting list of categories should be set to
+ * @param maxResults (optional) the maximum number of categories to return
  * 
  * @author apazzolini
  */
@@ -82,17 +87,19 @@ public class CategoriesProcessor extends AbstractModelVariableModifierProcessor 
         if (categories != null && categories.size() > 0) {
             // gets child categories in order ONLY if they are in the xref table and active
             List<CategoryXref> subcategories = categories.get(0).getChildCategoryXrefs();
+            List<Category> results = Collections.emptyList();
             if (subcategories != null && !subcategories.isEmpty()) {
+                results = new ArrayList<Category>(subcategories.size());
                 if (StringUtils.isNotEmpty(unparsedMaxResults)) {
                     int maxResults = Integer.parseInt(unparsedMaxResults);
                     if (subcategories.size() > maxResults) {
                         subcategories = subcategories.subList(0, maxResults);
                     }
                 }
-            }
-            List<Category> results = new ArrayList<Category>(subcategories.size());
-            for (CategoryXref xref : subcategories) {
-                results.add(xref.getSubCategory());
+                
+                for (CategoryXref xref : subcategories) {
+                    results.add(xref.getSubCategory());
+                }
             }
             
             addToModel(arguments, resultVar, results);

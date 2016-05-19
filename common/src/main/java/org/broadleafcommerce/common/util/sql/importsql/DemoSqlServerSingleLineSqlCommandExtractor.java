@@ -34,6 +34,8 @@ import java.io.Reader;
  */
 public class DemoSqlServerSingleLineSqlCommandExtractor extends SingleLineSqlCommandExtractor {
 
+    private static final long serialVersionUID = 1L;
+
     private static final SupportLogger LOGGER = SupportLogManager.getLogger("UserOverride", DemoSqlServerSingleLineSqlCommandExtractor.class);
 
     private static final String BOOLEANTRUEMATCH = "(?i)(true)";
@@ -49,10 +51,16 @@ public class DemoSqlServerSingleLineSqlCommandExtractor extends SingleLineSqlCom
     public String[] extractCommands(Reader reader) {
         if (!alreadyRun) {
             alreadyRun = true;
-            LOGGER.support("Converting hibernate.hbm2ddl.import_files sql statements for compatibility with Oracle");
+            LOGGER.support("Converting hibernate.hbm2ddl.import_files sql statements for compatibility with SQL Server");
         }
 
         String[] statements = super.extractCommands(reader);
+        handleBooleans(statements);
+
+        return statements;
+    }
+
+    protected void handleBooleans(String[] statements) {
         for (int j=0; j<statements.length; j++) {
             //try start matches
             statements[j] = statements[j].replaceAll(BOOLEANTRUEMATCH + "\\s*[,]", TRUE + ",");
@@ -68,8 +76,10 @@ public class DemoSqlServerSingleLineSqlCommandExtractor extends SingleLineSqlCom
             statements[j] = statements[j].replaceAll("[,]\\s*" + BOOLEANTRUEMATCH, "," + TRUE);
             statements[j] = statements[j].replaceAll("[,]\\s*" + BOOLEANFALSEMATCH, "," + FALSE);
             statements[j] = statements[j].replaceAll("[,]\\s*" + TIMESTAMPMATCH, "," + CURRENT_TIMESTAMP);
-        }
 
-        return statements;
+            //try matches for updates
+            statements[j] = statements[j].replaceAll("[=]\\s*" + BOOLEANTRUEMATCH, "=" + TRUE);
+            statements[j] = statements[j].replaceAll("[=]\\s*" + BOOLEANFALSEMATCH, "=" + FALSE);
+        }
     }
 }

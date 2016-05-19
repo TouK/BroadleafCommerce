@@ -3,13 +3,16 @@
     <parent>
         <artifactId>broadleaf</artifactId>
         <groupId>org.broadleafcommerce</groupId>
-        <version>3.1.1-GA</version>
+        <version>4.0.10-GA</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>integration</artifactId>
     <name>BroadleafCommerce Integration</name>
     <description>BroadleafCommerce Integration</description>
     <url>http://www.broadleafcommerce.org</url>
+    <properties>
+        <project.uri>${project.baseUri}/../</project.uri>
+    </properties>
     <licenses>
         <license>
             <name>Apache 2</name>
@@ -46,6 +49,13 @@
             <timezone>-6</timezone>
         </developer>
     </developers>
+    <repositories>
+        <repository>
+            <id>maven central snapshots</id>
+            <name>maven central snapshots</name>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </repository>
+    </repositories>
     <build>
         <plugins>
             <plugin>
@@ -60,6 +70,11 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>org.codehaus.gmavenplus</groupId>
+                <artifactId>gmavenplus-plugin</artifactId>
+                <version>1.2</version>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <executions>
@@ -67,7 +82,8 @@
                         <id>default-test</id>
                         <configuration>
                             <skipTests>true</skipTests>
-                            <argLine>-Xmx1024m -XX:MaxPermSize=512m -Dlegacy=true</argLine>
+                            <argLine>-Xmx1024m -XX:MaxPermSize=512m
+                                -Dlegacy=true ${surefire.argLine}</argLine>
                         </configuration>
                     </execution>
                     <execution>
@@ -80,14 +96,14 @@
                             <excludes>
                                 <exclude>**/Legacy**Test.java</exclude>
                             </excludes>
-                            <argLine>-Xmx1024m -XX:MaxPermSize=512m</argLine>
+                            <argLine>-Xmx1024m -XX:MaxPermSize=512m ${surefire.argLine}</argLine>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
             <plugin>
-                <!-- Only delete the contents of the target folder so that it doesn't
-                lose its "derived" status in Eclipse -->
+                <!-- Only delete the contents of the target folder so that 
+                    it doesn't lose its "derived" status in Eclipse -->
                 <artifactId>maven-clean-plugin</artifactId>
                 <configuration>
                     <excludeDefaultDirectories>true</excludeDefaultDirectories>
@@ -102,11 +118,16 @@
                 </configuration>
                 <version>2.4.1</version>
             </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
     <profiles>
         <profile>
-            <!-- Skip legacy tests by default, activated with the Maven 'legacy-test' profile -->
+            <!-- Skip legacy tests by default, activated with the Maven 'legacy-test' 
+                profile -->
             <id>legacy-test</id>
             <build>
                 <plugins>
@@ -179,9 +200,13 @@
                                 <id>legacy-test</id>
                                 <configuration>
                                     <argLine>
-                                        -Dlegacy=true 
-                                        -Xmx1024m -XX:MaxPermSize=512m -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8083 
-                                        -javaagent:${jrebel.path} -Drebel.log.stdout=true
+                                        -Dlegacy=true
+                                        -Xmx1024m
+                                        -XX:MaxPermSize=512m -Xdebug
+                                        -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8083
+                                        -javaagent:${jrebel.path}
+                                        -Drebel.log.stdout=true
+                                        ${surefire.argLine}
                                     </argLine>
                                 </configuration>
                             </execution>
@@ -189,8 +214,12 @@
                                 <id>non-legacy-test</id>
                                 <configuration>
                                     <argLine>
-                                        -Xmx1024m -XX:MaxPermSize=512m -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8083 
-                                        -javaagent:${jrebel.path} -Drebel.log.stdout=true
+                                        -Xmx1024m
+                                        -XX:MaxPermSize=512m -Xdebug
+                                        -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8083
+                                        -javaagent:${jrebel.path}
+                                        -Drebel.log.stdout=true
+                                        ${surefire.argLine}
                                     </argLine>
                                 </configuration>
                             </execution>
@@ -220,7 +249,7 @@
         <dependency>
             <groupId>org.broadleafcommerce</groupId>
             <artifactId>broadleaf-framework</artifactId>
-            <version>${project.version}</version><!--$NO-MVN-MAN-VER$-->
+            <version>${project.version}</version><!--$NO-MVN-MAN-VER$ -->
             <classifier>tests</classifier>
         </dependency>
         <dependency>
@@ -251,7 +280,8 @@
         </dependency>
         <dependency>
             <groupId>javax.servlet</groupId>
-            <artifactId>servlet-api</artifactId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>3.0.1</version>
         </dependency>
         <dependency>
             <groupId>javax.servlet.jsp</groupId>
@@ -276,6 +306,25 @@
         <dependency>
             <groupId>org.easymock</groupId>
             <artifactId>easymockclassextension</artifactId>
+        </dependency>
+
+        <!-- Spock/Groovy Test Dependencies -->
+        <dependency>
+            <groupId>org.codehaus.groovy</groupId>
+            <artifactId>groovy-all</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.spockframework</groupId>
+            <artifactId>spock-spring</artifactId>
+            <version>${spock.spring.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.codehaus.groovy</groupId>
+                    <artifactId>groovy-all</artifactId>
+                </exclusion>
+            </exclusions>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>

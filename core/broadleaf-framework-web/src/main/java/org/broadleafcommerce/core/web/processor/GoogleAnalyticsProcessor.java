@@ -20,6 +20,7 @@
 package org.broadleafcommerce.core.web.processor;
 
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang.StringUtils;
 import org.broadleafcommerce.common.payment.PaymentType;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.common.web.dialect.AbstractModelVariableModifierProcessor;
@@ -43,18 +44,24 @@ import java.util.Map;
 import javax.annotation.Resource;
 
 /**
- * A Thymeleaf processor that will on order confirmation page, submit order
- * information via javascript to google analytics.
+ * A Thymeleaf processor that will output Google Analytics tracking Javascript. When used on an order confirmation page
+ * in conjunction with an <b>orderNumber</b> this will also output the ecommerce transaction tracking parameters for
+ * Google Analytics
  * 
  * Example usage on order confirmation page:
  * <pre>
  *  {@code
- *      <blc:googleAnalytics th:attr="orderNumber=${order != null ? order.orderNumber : null}" />
+ *      <blc:googleanalytics th:attr="orderNumber=${order != null ? order.orderNumber : null}" />
  *      <script th:utext="${analytics}" />
  *  }
  * </pre>
+ * 
+ * @param ordernumber the order number of the submitted order
+ * 
  * @author tleffert
+ * @deprecated use the {@link GoogleUniversalAnalyticsProcessor} instead
  */
+@Deprecated
 public class GoogleAnalyticsProcessor extends AbstractModelVariableModifierProcessor {
 
     @Resource(name = "blOrderService")
@@ -130,13 +137,28 @@ public class GoogleAnalyticsProcessor extends AbstractModelVariableModifierProce
                 sb.append(",'" + order.getTotalShipping() + "'");
                 sb.append(",'" + paymentAddress.getCity() + "'");
 
-                if (paymentAddress.getState() != null) {
-                    sb.append(",'" + paymentAddress.getState().getName() + "'");
+                String state = null;
+                if (StringUtils.isNotBlank(paymentAddress.getStateProvinceRegion())) {
+                    state = paymentAddress.getStateProvinceRegion();
+                } else if (paymentAddress.getState() != null) {
+                    state = paymentAddress.getState().getName();
                 }
 
-                if (paymentAddress.getCountry() != null) {
-                    sb.append(",'" + paymentAddress.getCountry().getName() + "'");
+                String country = null;
+                if (paymentAddress.getIsoCountryAlpha2() != null) {
+                    country = paymentAddress.getIsoCountryAlpha2().getName();
+                } else if (paymentAddress.getCountry() != null) {
+                    country = paymentAddress.getCountry().getName();
                 }
+
+                if (state != null) {
+                    sb.append(",'" + state + "'");
+                }
+
+                if (country != null) {
+                    sb.append(",'" + country + "'");
+                }
+
                 sb.append("]);");
             }
             for (FulfillmentGroup fulfillmentGroup : order.getFulfillmentGroups()) {

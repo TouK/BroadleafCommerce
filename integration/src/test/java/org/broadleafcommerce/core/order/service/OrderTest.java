@@ -19,6 +19,8 @@
  */
 package org.broadleafcommerce.core.order.service;
 
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.Predicate;
 import org.broadleafcommerce.core.catalog.dao.SkuDao;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.domain.ProductBundle;
@@ -99,7 +101,9 @@ public class OrderTest extends OrderBaseTest {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addItemToOrder() throws AddToCartException {
         numOrderItems++;
-        Sku sku = skuDao.readFirstSku();
+        // In the database, some Skus are inactive and some are active. This ensures that we pull back an active one
+        // to test a successful cart add
+        Sku sku = getFirstActiveSku();
         Order order = orderService.findOrderById(orderId);
         assert order != null;
         assert sku.getId() != null;
@@ -129,8 +133,10 @@ public class OrderTest extends OrderBaseTest {
     @Test(groups = { "addAnotherItemToOrder" }, dependsOnGroups = { "addItemToOrder" })
     @Rollback(false)
     @Transactional
-    public void addAnotherItemToOrder() throws AddToCartException {
-        Sku sku = skuDao.readFirstSku();
+    public void addAnotherItemToOrder() throws AddToCartException, PricingException, RemoveFromCartException {
+     // In the database, some Skus are inactive and some are active. This ensures that we pull back an active one
+        // to test a successful cart add
+        Sku sku = getFirstActiveSku();
         Order order = orderService.findOrderById(orderId);
         assert order != null;
         assert sku.getId() != null;
@@ -160,6 +166,27 @@ public class OrderTest extends OrderBaseTest {
         FulfillmentGroupItem fgItem = fg.getFulfillmentGroupItems().get(0);
         assert fgItem.getOrderItem().equals(item);
         assert fgItem.getQuantity() == item.getQuantity();
+
+        //add the same item multiple times to the cart without merging or pricing
+        boolean currentVal = orderService.getAutomaticallyMergeLikeItems();
+        orderService.setAutomaticallyMergeLikeItems(false);
+        itemRequest = new OrderItemRequestDTO();
+        itemRequest.setQuantity(1);
+        itemRequest.setSkuId(sku.getId());
+        order = orderService.addItem(orderId, itemRequest, false);
+        order = orderService.addItem(orderId, itemRequest, false);
+        DiscreteOrderItem item2 = (DiscreteOrderItem) orderService.findLastMatchingItem(order, sku.getId(), null);
+        assert item2.getSku() != null;
+        assert item2.getSku().equals(sku);
+        assert item2.getQuantity() == 1;  // item-was not auto-merged with prior items.
+        order = orderService.findOrderById(orderId);
+        assert(order.getOrderItems().size()==3);
+        //reset the cart state back to what it was prior
+        order = orderService.removeItem(order.getId(), order.getOrderItems().get(1).getId(), true);
+        order = orderService.removeItem(order.getId(), order.getOrderItems().get(1).getId(), true);
+        orderService.setAutomaticallyMergeLikeItems(currentVal);
+        assert(order.getOrderItems().size()==1);
+        assert(order.getOrderItems().get(0).getQuantity()==2);
 
         /*
         This test is not supported currently, as the order service may only do like item merging
@@ -192,6 +219,21 @@ public class OrderTest extends OrderBaseTest {
         for (FulfillmentGroupItem fgi : fg.getFulfillmentGroupItems()) {
             assert fgi.getQuantity() == fgi.getOrderItem().getQuantity();
         }*/
+    }
+    
+    /**
+     * From the list of all Skus in the database, gets a Sku that is active
+     * @return
+     */
+    public Sku getFirstActiveSku() {
+        List<Sku> skus = skuDao.readAllSkus();
+        return CollectionUtils.find(skus, new Predicate<Sku>() {
+
+            @Override
+            public boolean evaluate(Sku sku) {
+                return sku.isActive();
+            }
+        });
     }
     
     @Test(groups = { "testIllegalAddScenarios" }, dependsOnGroups = { "addItemToOrder" })
@@ -266,6 +308,8 @@ public class OrderTest extends OrderBaseTest {
             assert e.getCause() instanceof IllegalArgumentException;
         }
         assert !addSuccessful;
+
+
         
     }
     

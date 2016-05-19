@@ -20,7 +20,7 @@
 package org.broadleafcommerce.core.web.processor;
 
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
-import org.broadleafcommerce.core.search.domain.ProductSearchCriteria;
+import org.broadleafcommerce.core.search.domain.SearchCriteria;
 import org.broadleafcommerce.core.web.util.ProcessorUtils;
 import org.thymeleaf.Arguments;
 import org.thymeleaf.dom.Element;
@@ -34,9 +34,11 @@ import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 
 /**
+ * <p>
  * A Thymeleaf processor that processes the value attribute on the element it's tied to
  * with a predetermined value based on the SearchFacetResultDTO object that is passed into this
- * processor. 
+ * processor.
+ * 
  * 
  * @author apazzolini
  */
@@ -69,9 +71,9 @@ public class PaginationPageLinkProcessor extends AbstractAttributeModifierAttrPr
                 .parseExpression(arguments.getConfiguration(), arguments, element.getAttributeValue(attributeName));
         Integer page = (Integer) expression.execute(arguments.getConfiguration(), arguments);
         if (page != null && page > 1) {
-            params.put(ProductSearchCriteria.PAGE_NUMBER, new String[] { page.toString() });
+            params.put(SearchCriteria.PAGE_NUMBER, new String[] { page.toString() });
         } else {
-            params.remove(ProductSearchCriteria.PAGE_NUMBER);
+            params.remove(SearchCriteria.PAGE_NUMBER);
         }
         
         String url = ProcessorUtils.getUrl(baseUrl, params);

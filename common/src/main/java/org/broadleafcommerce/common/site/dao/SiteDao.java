@@ -76,4 +76,13 @@ public interface SiteDao {
      * @return the catalog
      */
     public Catalog retrieveCatalog(Long id);
+    
+    public Catalog save(Catalog catalog);
+
+    /**
+     * Retrieves all catalogs
+     * 
+     * @return the list of catalogs
+     */
+    public List<Catalog> retrieveAllCatalogs();
 }

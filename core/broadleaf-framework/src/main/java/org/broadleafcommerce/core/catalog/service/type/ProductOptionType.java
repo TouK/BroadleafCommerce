@@ -46,6 +46,7 @@ public class ProductOptionType implements Serializable, BroadleafEnumerationType
     public static final ProductOptionType INTEGER  = new ProductOptionType("INTEGER","Integer");
     public static final ProductOptionType INPUT  = new ProductOptionType("INPUT","Input");
     public static final ProductOptionType PRODUCT  = new ProductOptionType("PRODUCT","Product");
+    public static final ProductOptionType SELECT = new ProductOptionType("SELECT", "Select");
 
     public static ProductOptionType getInstance(final String type) {
         return TYPES.get(type);
@@ -92,7 +93,7 @@ public class ProductOptionType implements Serializable, BroadleafEnumerationType
             return true;
         if (obj == null)
             return false;
-        if (getClass() != obj.getClass())
+        if (!getClass().isAssignableFrom(obj.getClass()))
             return false;
         ProductOptionType other = (ProductOptionType) obj;
         if (type == null) {

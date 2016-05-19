@@ -20,9 +20,11 @@
 
 package org.broadleafcommerce.core.payment.service;
 
+import org.apache.commons.lang.StringUtils;
 import org.broadleafcommerce.common.money.Money;
-import org.broadleafcommerce.common.payment.PaymentType;
+import org.broadleafcommerce.common.payment.PaymentTransactionType;
 import org.broadleafcommerce.common.payment.dto.PaymentRequestDTO;
+import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.core.order.domain.FulfillmentGroup;
 import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.order.service.FulfillmentGroupService;
@@ -53,8 +55,10 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
     public PaymentRequestDTO translateOrder(Order order) {
         if (order != null) {
             PaymentRequestDTO requestDTO = new PaymentRequestDTO()
-                    .orderId(order.getId().toString())
-                    .orderCurrencyCode(order.getCurrency().getCurrencyCode());
+                    .orderId(order.getId().toString());
+            if (order.getCurrency() != null) {
+                requestDTO.orderCurrencyCode(order.getCurrency().getCurrencyCode());
+            }
 
             populateCustomerInfo(order, requestDTO);
             populateShipTo(order, requestDTO);
@@ -67,9 +71,12 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
 
         return null;
     }
+    
+    //Logger LOG = Logger.getLogger(this.getClass().getName()); 
 
     @Override
     public PaymentRequestDTO translatePaymentTransaction(Money transactionAmount, PaymentTransaction paymentTransaction) {
+    	
         //Will set the full amount to be charged on the transaction total/subtotal and not worry about shipping/tax breakdown
         PaymentRequestDTO requestDTO = new PaymentRequestDTO()
             .transactionTotal(transactionAmount.getAmount().toPlainString())
@@ -79,9 +86,20 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
             .orderCurrencyCode(paymentTransaction.getOrderPayment().getCurrency().getCurrencyCode())
             .orderId(paymentTransaction.getOrderPayment().getOrder().getId().toString());
         
+        Order order = paymentTransaction.getOrderPayment().getOrder();
+        populateCustomerInfo(order, requestDTO);
+        populateShipTo(order, requestDTO);
+        populateBillTo(order, requestDTO);
+
+        // Only set totals and line items when in a Payment flow
+        if (PaymentTransactionType.UNCONFIRMED.equals(paymentTransaction.getType())) {
+            populateTotals(order, requestDTO);
+            populateDefaultLineItemsAndSubtotal(order, requestDTO);
+        }
         //Copy Additional Fields from PaymentTransaction into the Request DTO.
         //This will contain any gateway specific information needed to perform actions on this transaction
         Map<String, String> additionalFields = paymentTransaction.getAdditionalFields();
+        
         for (String key : additionalFields.keySet()) {
             requestDTO.additionalField(key, additionalFields.get(key));
         }
@@ -89,7 +107,8 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
         return requestDTO;
     }
 
-    protected void populateTotals(Order order, PaymentRequestDTO requestDTO) {
+    @Override
+    public void populateTotals(Order order, PaymentRequestDTO requestDTO) {
         String total = ZERO_TOTAL;
         String shippingTotal = ZERO_TOTAL;
         String taxTotal = ZERO_TOTAL;
@@ -112,7 +131,8 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
                 .orderCurrencyCode(order.getCurrency().getCurrencyCode());
     }
 
-    protected void populateCustomerInfo(Order order, PaymentRequestDTO requestDTO) {
+    @Override
+    public void populateCustomerInfo(Order order, PaymentRequestDTO requestDTO) {
         Customer customer = order.getCustomer();
         String phoneNumber = null;
         if (customer.getCustomerPhones() != null && !customer.getCustomerPhones().isEmpty()) {
@@ -140,7 +160,8 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
      * @param requestDTO the {@link PaymentRequestDTO} that should be populated
      * @see {@link FulfillmentGroupService#getFirstShippableFulfillmentGroup(Order)}
      */
-    protected void populateShipTo(Order order, PaymentRequestDTO requestDTO) {
+    @Override
+    public void populateShipTo(Order order, PaymentRequestDTO requestDTO) {
         List<FulfillmentGroup> fgs = order.getFulfillmentGroups();
         if (fgs != null && fgs.size() > 0) {
             FulfillmentGroup defaultFg = fgService.getFirstShippableFulfillmentGroup(order);
@@ -150,21 +171,29 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
                 String countryAbbr = null;
                 String phone = null;
 
-                if (fgAddress.getState() != null) {
+                if (StringUtils.isNotBlank(fgAddress.getStateProvinceRegion())) {
+                    stateAbbr = fgAddress.getStateProvinceRegion();
+                } else if (fgAddress.getState() != null) {
+                    //support legacy
                     stateAbbr = fgAddress.getState().getAbbreviation();
                 }
 
-                if (fgAddress.getCountry() != null) {
+                if (fgAddress.getIsoCountryAlpha2() != null) {
+                    countryAbbr = fgAddress.getIsoCountryAlpha2().getAlpha2();
+                } else if (fgAddress.getCountry() != null) {
+                    //support legacy
                     countryAbbr = fgAddress.getCountry().getAbbreviation();
                 }
 
                 if (fgAddress.getPhonePrimary() != null) {
                     phone = fgAddress.getPhonePrimary().getPhoneNumber();
                 }
-
+                
+                NameResponse name = getName(fgAddress);
+                
                 requestDTO.shipTo()
-                        .addressFirstName(fgAddress.getFirstName())
-                        .addressLastName(fgAddress.getLastName())
+                        .addressFirstName(name.firstName)
+                        .addressLastName(name.lastName)
                         .addressCompanyName(fgAddress.getCompanyName())
                         .addressLine1(fgAddress.getAddressLine1())
                         .addressLine2(fgAddress.getAddressLine2())
@@ -178,42 +207,79 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
         }
     }
 
-    protected void populateBillTo(Order order, PaymentRequestDTO requestDTO) {
+    @Override
+    public void populateBillTo(Order order, PaymentRequestDTO requestDTO) {
         for (OrderPayment payment : order.getPayments()) {
-            if (payment.isActive() && PaymentType.CREDIT_CARD.equals(payment.getType())) {
+            if (payment.isActive()) {
                 Address billAddress = payment.getBillingAddress();
-                String stateAbbr = null;
-                String countryAbbr = null;
-                String phone = null;
+                if (billAddress != null) {
+                    String stateAbbr = null;
+                    String countryAbbr = null;
+                    String phone = null;
 
-                if (billAddress.getState() != null) {
-                    stateAbbr = billAddress.getState().getAbbreviation();
+                    if (StringUtils.isNotBlank(billAddress.getStateProvinceRegion())) {
+                        stateAbbr = billAddress.getStateProvinceRegion();
+                    } else if (billAddress.getState() != null) {
+                        //support legacy
+                        stateAbbr = billAddress.getState().getAbbreviation();
+                    }
+
+                    if (billAddress.getIsoCountryAlpha2() != null) {
+                        countryAbbr = billAddress.getIsoCountryAlpha2().getAlpha2();
+                    } else if (billAddress.getCountry() != null) {
+                        //support legacy
+                        countryAbbr = billAddress.getCountry().getAbbreviation();
+                    }
+
+                    if (billAddress.getPhonePrimary() != null) {
+                        phone = billAddress.getPhonePrimary().getPhoneNumber();
+                    }
+                    
+                    NameResponse name = getName(billAddress);
+                    
+                    requestDTO.billTo()
+                            .addressFirstName(name.firstName)
+                            .addressLastName(name.lastName)
+                            .addressCompanyName(billAddress.getCompanyName())
+                            .addressLine1(billAddress.getAddressLine1())
+                            .addressLine2(billAddress.getAddressLine2())
+                            .addressCityLocality(billAddress.getCity())
+                            .addressStateRegion(stateAbbr)
+                            .addressPostalCode(billAddress.getPostalCode())
+                            .addressCountryCode(countryAbbr)
+                            .addressPhone(phone)
+                            .addressEmail(billAddress.getEmailAddress());
                 }
-
-                if (billAddress.getCountry() != null) {
-                    countryAbbr = billAddress.getCountry().getAbbreviation();
-                }
-
-                if (billAddress.getPhonePrimary() != null) {
-                    phone = billAddress.getPhonePrimary().getPhoneNumber();
-                }
-
-                requestDTO.billTo()
-                        .addressFirstName(billAddress.getFirstName())
-                        .addressLastName(billAddress.getLastName())
-                        .addressCompanyName(billAddress.getCompanyName())
-                        .addressLine1(billAddress.getAddressLine1())
-                        .addressLine2(billAddress.getAddressLine2())
-                        .addressCityLocality(billAddress.getCity())
-                        .addressStateRegion(stateAbbr)
-                        .addressPostalCode(billAddress.getPostalCode())
-                        .addressCountryCode(countryAbbr)
-                        .addressPhone(phone)
-                        .addressEmail(billAddress.getEmailAddress());
             }
         }
     }
 
+    
+    protected NameResponse getName(Address address) {
+        NameResponse response = new NameResponse();
+        
+        if (BLCSystemProperty.resolveBooleanSystemProperty("validator.address.fullNameOnly")) {
+            String fullName = address.getFullName();
+            
+            if (StringUtils.isNotBlank(fullName)) {
+                char nameSeparatorChar = ' ';
+                int spaceCharacterIndex = fullName.indexOf(nameSeparatorChar);
+                if (spaceCharacterIndex != -1 && (fullName.length() > spaceCharacterIndex + 1)) {
+                    response.firstName = fullName.substring(0, spaceCharacterIndex);
+                    // use lastIndexOf instead of indexOf to deal with the case where a user put <first> <middle> <last>
+                    response.lastName = fullName.substring(fullName.lastIndexOf(nameSeparatorChar) + 1, fullName.length());
+                } else {
+                    response.firstName = fullName;
+                    response.lastName = "";
+                }
+            }
+        } else {
+            response.firstName = address.getFirstName();
+            response.lastName = address.getLastName();
+        }
+        
+        return response;
+    }
 
 
     /**
@@ -237,13 +303,19 @@ public class OrderToPaymentRequestDTOServiceImpl implements OrderToPaymentReques
      * @param order
      * @param requestDTO
      */
-    protected void populateDefaultLineItemsAndSubtotal(Order order, PaymentRequestDTO requestDTO) {
+    @Override
+    public void populateDefaultLineItemsAndSubtotal(Order order, PaymentRequestDTO requestDTO) {
         String subtotal = ZERO_TOTAL;
         if (order.getSubTotal() != null) {
             subtotal = order.getSubTotal().toString();
         }
 
         requestDTO.orderSubtotal(subtotal);
+    }
+    
+    public class NameResponse {
+        protected String firstName;
+        protected String lastName;
     }
 
 }

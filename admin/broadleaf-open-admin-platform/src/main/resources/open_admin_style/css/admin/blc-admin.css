@@ -46,6 +46,10 @@ html {
 	display: none;
 }
 
+a.unclickable { 
+	cursor: default; color: grey; 
+}
+
 .float-left {
     float: left;
 }
@@ -146,6 +150,10 @@ span.field-help,
 }
 
 div.errors {
+    margin-bottom: 10px;
+}
+
+div.errors .tabError {
     margin-bottom: 10px;
 }
 
@@ -317,6 +325,8 @@ h2#mainEntityName {
 	margin-top: 0;
 }
 
+input[type="text"][readonly], input[type="password"][readonly], input[type="date"][readonly], input[type="datetime"][readonly], input[type="email"][readonly], input[type="number"][readonly], input[type="search"][readonly], input[type="tel"][readonly], input[type="time"][readonly], input[type="url"][readonly], textarea[readonly] { background-color: #ddd; }
+
 /* --------------------------------------------------
   Top Bar
 ----------------------------------------------------- */
@@ -333,7 +343,8 @@ h2#mainEntityName {
 .top-bar .attached {
     padding: 0 0 0 23px;
     max-width: 1280px;
-    z-index: 0 !important;
+    z-index: 1000 !important;
+    position: relative;
 }
 
 .top-bar .attached > .brand {
@@ -388,7 +399,7 @@ nav > ul.blc-accordion > li:last-child .title {
 	border-bottom: 1px solid #CCC;
 }
 
-nav > ul.blc-accordion > li .title::after {
+nav > ul.blc-accordion > li .title:after {
     content: "";
     display: block;
     width: 0;
@@ -400,7 +411,7 @@ nav > ul.blc-accordion > li .title::after {
     top: 21px;
 }
 
-nav > ul.blc-accordion > li.active .title::after {
+nav > ul.blc-accordion > li.active .title:after {
     content: "";
     display: block;
     width: 0;
@@ -742,7 +753,7 @@ div#headerDetailedMsgContainer div#headerDetailedMsgBody {
     padding: 0;
     border: 1px solid #cccccc;
     border-radius: 4px;
-    z-index: 40;
+    z-index: 1050;
     right: 0;
 }
 
@@ -1086,6 +1097,13 @@ div.alert-box.list-grid-alert {
 	padding: 0 0 0 7px;
 	margin-bottom: 8px;
 	font-size: 13px;
+}
+
+div.alert-box.list-grid-alert.no-allowed-value-error {
+    padding: 0 0 0 7px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    background-color: red;
 }
 
 div.alert-box.list-grid-alert.save-alert {
@@ -1548,13 +1566,21 @@ form.custom div.conditional div.custom.dropdown {
 	padding-bottom: 0;
 }
 
-body .redactor_toolbar li a.redactor_btn_selectAssetButton { 
+body .redactor-toolbar li a.re-selectasset { 
 	background-position: -200px; 
 }
 
-body .redactor_toolbar li a.redactor_btn_font { 
+body .redactor-toolbar li a.redactor_btn_font { 
 	background-image: url('../../img/admin/font-selection.png');
-	background-position-x: 0;
+	background-position: 0 -5px;
+}
+
+body .redactor-redactor {
+    max-width: 934px;
+}
+
+body #redactor_modal_overlay, body #redactor_modal, body .redactor_dropdown {
+	z-index: 3000 !important;
 }
 
 .category-tree {
@@ -1570,7 +1596,7 @@ a.show-translations {
    Static Assets
 ----------------------------------------- */
 
-button.show-asset-selector {
+button.show-asset-selector, button.clear-asset-selector {
 	vertical-align: text-bottom;
 	bottom: 4px;
 }
@@ -1583,9 +1609,8 @@ form.uploadFileForm {
 }
 
 form.uploadFileForm.entityListWithUpload {
-	display: none;
+	float: right;
 }
-
 
 div.imagePreviewContainer {
 	width: 200px;
@@ -1619,6 +1644,21 @@ div#thumbnail-zoom {
     margin: 50px auto 20px auto;
     padding: 30px 30px 10px 30px;
     max-width: 500px;
+}
+
+.blc-login-link {
+    margin: 0 auto;
+    padding-top: 5px;
+}
+
+.blc-login-link > ul > li.divider {
+    background: #ccc;
+    -webkit-box-shadow: 1px 0 0 rgba(255, 255, 255, 0.1);
+    -moz-box-shadow: 1px 0 0 rgba(255, 255, 255, 0.1);
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.1);
+    height: 100%;
+    margin-right: 1px;
+    width: 1px;
 }
 
 .basic-links {
@@ -1730,6 +1770,12 @@ div.action-popup a.action-popup-cancel {
 	line-height: 27px;
 }
 
+div.action-popup span.submit-error.success {
+	color: #8EAA2B;
+	font-weight: bold;
+}
+
+
 div.action-popup span.submit-error,
 div.action-popup span.sync-ok {
 	line-height: 27px;
@@ -1773,4 +1819,10 @@ div.action-popup img.ajax-loader {
     float: right;
     margin-right: 10px;
     display: none;
+}
+
+div.action-popup.change-password {
+	top: 20px;
+	right: 0;
+	width: 330px;
 }

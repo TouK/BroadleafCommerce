@@ -23,9 +23,11 @@ import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
-import org.broadleafcommerce.common.util.dao.DynamicDaoHelper;
-import org.broadleafcommerce.common.util.dao.DynamicDaoHelperImpl;
-import org.hibernate.Session;
+import org.broadleafcommerce.common.util.BLCFieldUtils;
+import org.broadleafcommerce.common.util.HibernateUtils;
+import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManager;
+import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManagerFactory;
+import org.broadleafcommerce.openadmin.server.service.persistence.TargetModeType;
 import org.hibernate.SessionFactory;
 import org.hibernate.ejb.HibernateEntityManager;
 
@@ -53,7 +55,6 @@ public class FieldManager {
 
     protected EntityConfiguration entityConfiguration;
     protected EntityManager entityManager;
-    protected DynamicDaoHelper helper = new DynamicDaoHelperImpl();
     protected List<SortableValue> middleFields = new ArrayList<SortableValue>(5);
 
     public FieldManager(EntityConfiguration entityConfiguration, EntityManager entityManager) {
@@ -62,82 +63,24 @@ public class FieldManager {
     }
 
     public static Field getSingleField(Class<?> clazz, String fieldName) throws IllegalStateException {
-        try {
-            return clazz.getDeclaredField(fieldName);
-        } catch (NoSuchFieldException nsf) {
-            // Try superclass
-            if (clazz.getSuperclass() != null) {
-                return getSingleField(clazz.getSuperclass(), fieldName);
-            }
-
-            return null;
-        }
+        return BLCFieldUtils.getSingleField(clazz, fieldName);
     }
 
     public Field getField(Class<?> clazz, String fieldName) throws IllegalStateException {
-        SessionFactory sessionFactory = ((HibernateEntityManager) entityManager).getSession().getSessionFactory();
-        String[] tokens = fieldName.split("\\.");
-        Field field = null;
-
-        for (int j=0;j<tokens.length;j++) {
-            String propertyName = tokens[j];
-            field = getSingleField(clazz, propertyName);
-            if (field != null && j < tokens.length - 1) {
-                Class<?>[] entities = helper.getAllPolymorphicEntitiesFromCeiling(field.getType(), sessionFactory, true, true);
-                if (!ArrayUtils.isEmpty(entities)) {
-                    String peekAheadToken = tokens[j+1];
-                    List<Class<?>> matchedClasses = new ArrayList<Class<?>>();
-                    for (Class<?> entity : entities) {
-                        Field peekAheadField = null;
-                        try {
-                            peekAheadField = entity.getDeclaredField(peekAheadToken);
-                        } catch (NoSuchFieldException nsf) {
-                            //do nothing
-                        }
-                        if (peekAheadField != null) {
-                            matchedClasses.add(entity);
-                        }
-                    }
-                    if (matchedClasses.size() > 1) {
-                        LOG.warn("Found the property (" + peekAheadToken + ") in more than one class of an inheritance hierarchy. This may lead to unwanted behavior, as the system does not know which class was intended. Do not use the same property name in different levels of the inheritance hierarchy. Defaulting to the first class found (" + matchedClasses.get(0).getName() + ")");
-                    }
-                    if (matchedClasses.isEmpty()) {
-                        //probably an artificial field (i.e. passwordConfirm on AdminUserImpl)
-                        return null;
-                    }
-                    if (getSingleField(matchedClasses.get(0), peekAheadToken) != null) {
-                        clazz = matchedClasses.get(0);
-                        Class<?>[] entities2 = helper.getAllPolymorphicEntitiesFromCeiling(clazz, sessionFactory, true, true);
-                        if (!ArrayUtils.isEmpty(entities2) && matchedClasses.size() == 1 && clazz.isInterface()) {
-                            try {
-                                clazz = entityConfiguration.lookupEntityClass(field.getType().getName());
-                            } catch (Exception e) {
-                                // Do nothing - we'll use the matchedClass
-                            }
-                        }
-                    } else {
-                        clazz = field.getType();
-                    }
-                } else {
-                    //may be an embedded class - try the class directly
-                    clazz = field.getType();
-                }
-            } else {
-                break;
-            }
-        }
-        
-        if (field != null) {
-            field.setAccessible(true);
-        }
-        return field;
+        PersistenceManager persistenceManager = getPersistenceManager();
+        SessionFactory sessionFactory = persistenceManager.getDynamicEntityDao().getDynamicDaoHelper().
+                getSessionFactory((HibernateEntityManager) persistenceManager.getDynamicEntityDao().getStandardEntityManager());
+        BLCFieldUtils fieldUtils = new BLCFieldUtils(sessionFactory, true, persistenceManager.getDynamicEntityDao().useCache(),
+                persistenceManager.getDynamicEntityDao().getEjb3ConfigurationDao(), entityConfiguration,
+                persistenceManager.getDynamicEntityDao().getDynamicDaoHelper());
+        return fieldUtils.getField(clazz, fieldName);
     }
-    
+
     public Object getFieldValue(Object bean, String fieldName) throws IllegalAccessException, FieldNotAvailableException {
         StringTokenizer tokens = new StringTokenizer(fieldName, ".");
         Class<?> componentClass = bean.getClass();
         Field field;
-        Object value = bean;
+        Object value = HibernateUtils.deproxy(bean);
 
         while (tokens.hasMoreTokens()) {
             String fieldNamePart = tokens.nextToken();
@@ -171,6 +114,7 @@ public class FieldManager {
         StringTokenizer tokens = new StringTokenizer(fieldName, ".");
         Class<?> componentClass = bean.getClass();
         Field field;
+        bean = HibernateUtils.deproxy(bean);
         Object value = bean;
         
         int count = tokens.countTokens();
@@ -215,23 +159,25 @@ public class FieldManager {
                         value = newEntity;
                     } catch (Exception e) {
                         //Use the most extended type based on the field type
-                        SessionFactory sessionFactory = entityManager.unwrap(Session.class).getSessionFactory();
-                        Class<?>[] entities = helper.getAllPolymorphicEntitiesFromCeiling(field.getType(), sessionFactory, true, true);
+                        PersistenceManager persistenceManager = getPersistenceManager();
+                        Class<?>[] entities = persistenceManager.getUpDownInheritance(field.getType());
                         if (!ArrayUtils.isEmpty(entities)) {
-                            Object newEntity = entities[0].newInstance();
+                            Object newEntity = entities[entities.length-1].newInstance();
                             SortableValue val = new SortableValue(bean, (Serializable) newEntity, j, sb.toString());
                             middleFields.add(val);
                             field.set(value, newEntity);
                             componentClass = newEntity.getClass();
                             value = newEntity;
-                            LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. Using the most extended form of this class identified as ("+entities[0].getName()+")");
+                            LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. " +
+                                    "Using the most extended form of this class identified as ("+entities[0].getName()+")");
                         } else {
                             //Just use the field type
                             Object newEntity = field.getType().newInstance();
                             field.set(value, newEntity);
                             componentClass = newEntity.getClass();
                             value = newEntity;
-                            LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. Using the type of this class.");
+                            LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. " +
+                                    "Using the type of this class.");
                         }
                     }
                 }
@@ -242,6 +188,30 @@ public class FieldManager {
         
         return value;
 
+    }
+
+    public Class<?> getFieldType(Field field) {
+        //consult the entity configuration manager to see if there is a user
+        //configured entity for this class
+        Class<?> response;
+        try {
+            response = entityConfiguration.lookupEntityClass(field.getType().getName());
+        } catch (Exception e) {
+            //Use the most extended type based on the field type
+            PersistenceManager persistenceManager = getPersistenceManager();
+            Class<?>[] entities = persistenceManager.getUpDownInheritance(field.getType());
+            if (!ArrayUtils.isEmpty(entities)) {
+                response = entities[entities.length-1];
+                LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. " +
+                        "Using the most extended form of this class identified as ("+entities[0].getName()+")");
+            } else {
+                //Just use the field type
+                response = field.getType();
+                LOG.info("Unable to find a reference to ("+field.getType().getName()+") in the EntityConfigurationManager. " +
+                        "Using the type of this class.");
+            }
+        }
+        return response;
     }
     
     public Map<String, Serializable> persistMiddleEntities() throws InstantiationException, IllegalAccessException {
@@ -260,6 +230,16 @@ public class FieldManager {
     public EntityConfiguration getEntityConfiguration() {
         return entityConfiguration;
     }
+
+    protected PersistenceManager getPersistenceManager() {
+        PersistenceManager persistenceManager;
+        try {
+            persistenceManager = PersistenceManagerFactory.getPersistenceManager();
+        } catch (IllegalStateException e) {
+            persistenceManager = PersistenceManagerFactory.getPersistenceManager(TargetModeType.SANDBOX);
+        }
+        return persistenceManager;
+    }
     
     private class SortableValue implements Comparable<SortableValue> {
         
@@ -277,6 +257,7 @@ public class FieldManager {
             this.containingPropertyName = containingPropertyName;
         }
 
+        @Override
         public int compareTo(SortableValue o) {
             return pos.compareTo(o.pos) * -1;
         }
@@ -305,7 +286,7 @@ public class FieldManager {
                 return true;
             if (obj == null)
                 return false;
-            if (getClass() != obj.getClass())
+            if (!getClass().isAssignableFrom(obj.getClass()))
                 return false;
             SortableValue other = (SortableValue) obj;
             if (!getOuterType().equals(other.getOuterType()))

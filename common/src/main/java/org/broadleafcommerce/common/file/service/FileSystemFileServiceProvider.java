@@ -21,9 +21,12 @@ package org.broadleafcommerce.common.file.service;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.extension.ExtensionResultHolder;
+import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.file.FileServiceException;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 import org.broadleafcommerce.common.file.service.type.FileApplicationType;
@@ -34,7 +37,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+
+import javax.annotation.Resource;
 
 /**
  * Default implementation of FileServiceProvider that uses the local file system to store files created by Broadleaf
@@ -55,6 +61,9 @@ public class FileSystemFileServiceProvider implements FileServiceProvider {
     @Value("${asset.server.max.generated.file.system.directories}")
     protected int maxGeneratedDirectoryDepth;
 
+    @Resource(name = "blBroadleafFileServiceExtensionManager")
+    protected BroadleafFileServiceExtensionManager extensionManager;
+
     private static final String DEFAULT_STORAGE_DIRECTORY = System.getProperty("java.io.tmpdir");
 
     private static final Log LOG = LogFactory.getLog(FileSystemFileServiceProvider.class);
@@ -63,34 +72,53 @@ public class FileSystemFileServiceProvider implements FileServiceProvider {
     protected String baseDirectory;
 
     @Override
-    public File getResource(String name) {
-        return getResource(name, FileApplicationType.ALL);
+    public File getResource(String url) {
+        return getResource(url, FileApplicationType.ALL);
     }
 
     @Override
-    public File getResource(String name, FileApplicationType applicationType) {
-        String fileName = buildResourceName(name);
-        return new File(getBaseDirectory() + fileName);
+    public File getResource(String url, FileApplicationType applicationType) {
+        String fileName = buildResourceName(url);
+        String baseDirectory = getBaseDirectory(true);
+        ExtensionResultHolder<String> holder = new ExtensionResultHolder<String>();
+        if (extensionManager != null){
+            ExtensionResultStatusType result = extensionManager.getProxy().processPathForSite(baseDirectory, fileName, holder);
+            if (!ExtensionResultStatusType.NOT_HANDLED.equals(result)) {
+                return new File(holder.getResult());
+            }
+        }
+        String filePath = FilenameUtils.normalize(getBaseDirectory(false) + File.separator + fileName);
+        return new File(filePath);
+    }
+    
+    @Override
+    @Deprecated
+    public void addOrUpdateResources(FileWorkArea workArea, List<File> files, boolean removeFilesFromWorkArea) {
+        addOrUpdateResourcesForPaths(workArea, files, removeFilesFromWorkArea);
     }
 
     @Override
-    public void addOrUpdateResources(FileWorkArea area, List<File> files, boolean removeResourcesFromWorkArea) {
+    public List<String> addOrUpdateResourcesForPaths(FileWorkArea workArea, List<File> files, boolean removeFilesFromWorkArea) {
+        List<String> result = new ArrayList<String>();
         for (File srcFile : files) {
-            if (!srcFile.getAbsolutePath().startsWith(area.getFilePathLocation())) {
+            if (!srcFile.getAbsolutePath().startsWith(workArea.getFilePathLocation())) {
                 throw new FileServiceException("Attempt to update file " + srcFile.getAbsolutePath() +
-                        " that is not in the passed in WorkArea " + area.getFilePathLocation());
+                        " that is not in the passed in WorkArea " + workArea.getFilePathLocation());
             }
 
-            String fileName = srcFile.getAbsolutePath().substring(area.getFilePathLocation().length());
-
-            String resourceName = buildResourceName(fileName);
-            File destFile = new File(getBaseDirectory() + resourceName);
+            String fileName = srcFile.getAbsolutePath().substring(workArea.getFilePathLocation().length());
+            
+            // before building the resource name, convert the file path to a url-like path
+            String url = FilenameUtils.separatorsToUnix(fileName);
+            String resourceName = buildResourceName(url);
+            String destinationFilePath = FilenameUtils.normalize(getBaseDirectory(false) + File.separator + resourceName);
+            File destFile = new File(destinationFilePath);
             if (!destFile.getParentFile().exists()) {
                 destFile.getParentFile().mkdirs();
             }
             
             try {
-                if (removeResourcesFromWorkArea) {
+                if (removeFilesFromWorkArea) {
                     if (destFile.exists()) {
                         FileUtils.deleteQuietly(destFile);
                     }
@@ -98,17 +126,20 @@ public class FileSystemFileServiceProvider implements FileServiceProvider {
                 } else {
                     FileUtils.copyFile(srcFile, destFile);
                 }
+                result.add(fileName);
             } catch (IOException ioe) {
                 throw new FileServiceException("Error copying resource named " + fileName + " from workArea " +
-                        area.getFilePathLocation() + " to " + resourceName, ioe);
+                        workArea.getFilePathLocation() + " to " + resourceName, ioe);
             }
         }
+        return result;
     }
 
     @Override
     public boolean removeResource(String name) {
         String resourceName = buildResourceName(name);
-        File fileToRemove = new File(getBaseDirectory() + resourceName);
+        String filePathToRemove = FilenameUtils.normalize(getBaseDirectory(false) + File.separator + resourceName);
+        File fileToRemove = new File(filePathToRemove);
         return fileToRemove.delete();
     }
 
@@ -139,53 +170,46 @@ public class FileSystemFileServiceProvider implements FileServiceProvider {
      * @return
      */
     protected String buildResourceName(String url) {
-        StringBuilder resourceName = new StringBuilder();
         // Create directories based on hash
         String fileHash = null;
-        if (!url.startsWith(File.separator)) {
-            fileHash = DigestUtils.md5Hex(File.separator + url);
+        // Intentionally not using File.separator here since URLs should always end with /
+        if (!url.startsWith("/")) {
+            fileHash = DigestUtils.md5Hex("/" + url);
         } else {
             fileHash = DigestUtils.md5Hex(url);
         }
 
+        String resourceName = "";
         for (int i = 0; i < maxGeneratedDirectoryDepth; i++) {
             if (i == 4) {
                 LOG.warn("Property maxGeneratedDirectoryDepth set to high, ignoring values past 4 - value set to" +
                         maxGeneratedDirectoryDepth);
                 break;
             }
-            resourceName = resourceName.append(fileHash.substring(i * 2, (i + 1) * 2)).append(File.separator);
+            resourceName = FilenameUtils.concat(resourceName, fileHash.substring(i * 2, (i + 1) * 2));
         }
 
-        int pos = url.lastIndexOf(File.separator);
-        if (pos >= 0 && (pos < url.length() - 1)) {
-            // Use the fileName as specified if possible.
-            resourceName = resourceName.append(url.substring(pos + 1));
-        } else {
-            // Just use the hash since we didn't find a filename for this one.
-            resourceName = resourceName.append(url);
-        }
-        return resourceName.toString();
+        // use the filename from the URL which is everything after the last slash
+        return FilenameUtils.concat(resourceName, FilenameUtils.getName(url));
     }
 
     /**
      * Returns a base directory (unique for each tenant in a multi-tenant installation.
      * Creates the directory if it does not already exist.
      */
-    protected String getBaseDirectory() {
+    protected String getBaseDirectory(boolean skipSite) {
         if (baseDirectory == null) {
-            if (StringUtils.isNotEmpty(fileSystemBaseDirectory)) {
+            if (StringUtils.isNotBlank(fileSystemBaseDirectory)) {
                 baseDirectory = fileSystemBaseDirectory;
             } else {
                 baseDirectory = DEFAULT_STORAGE_DIRECTORY;
             }
-
-            if (!baseDirectory.endsWith(File.separator)) {
-                baseDirectory = baseDirectory.trim() + File.separator;
-            }
         }
-
-        return getSiteDirectory(baseDirectory);
+        if (!skipSite) {
+            return getSiteDirectory(baseDirectory);
+        } else {
+            return baseDirectory;
+        }
     }
 
     /**
@@ -201,9 +225,10 @@ public class FileSystemFileServiceProvider implements FileServiceProvider {
         if (brc != null) {
             Site site = brc.getSite();
             if (site != null) {
-                String siteDirectory = File.separator + "site-" + site.getId();
+                String siteDirectory = "site-" + site.getId();
                 String siteHash = DigestUtils.md5Hex(siteDirectory);
-                return baseDirectory + siteHash.substring(0, 2) + siteDirectory + File.separator;
+                String sitePath = FilenameUtils.concat(siteHash.substring(0, 2), siteDirectory);
+                return FilenameUtils.concat(baseDirectory, sitePath);
             }
         }
 

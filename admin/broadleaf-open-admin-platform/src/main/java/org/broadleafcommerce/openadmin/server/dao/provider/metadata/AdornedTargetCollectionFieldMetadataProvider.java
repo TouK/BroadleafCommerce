@@ -19,13 +19,6 @@
  */
 package org.broadleafcommerce.openadmin.server.dao.provider.metadata;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.ParameterizedType;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.persistence.ManyToOne;
-
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -57,6 +50,13 @@ import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.persistence.ManyToOne;
+
 /**
  * @author Jeff Fischer
  */
@@ -71,6 +71,7 @@ public class AdornedTargetCollectionFieldMetadataProvider extends AdvancedCollec
         return annot != null;
     }
 
+    @Override
     protected boolean canHandleFieldForTypeMetadata(AddMetadataFromFieldTypeRequest addMetadataFromFieldTypeRequest, Map<String, FieldMetadata> metadata) {
         AdminPresentationAdornedTargetCollection annot = addMetadataFromFieldTypeRequest.getRequestedField().getAnnotation(AdminPresentationAdornedTargetCollection.class);
         return annot != null;
@@ -504,8 +505,12 @@ public class AdornedTargetCollectionFieldMetadataProvider extends AdvancedCollec
                 try {
                     ParameterizedType pt = (ParameterizedType) field.getGenericType();
                     java.lang.reflect.Type collectionType = pt.getActualTypeArguments()[0];
-                    String ceilingEntityName = ((Class<?>) collectionType).getName();
-                    collectionTarget = entityConfiguration.lookupEntityClass(ceilingEntityName);
+                    collectionTarget = (Class<?>) collectionType;
+                    // Only check entityConfiguration if it's an interface since I can't determine what the
+                    // Hibernate class is from that
+                    if (collectionTarget.isInterface()) {
+                        collectionTarget = entityConfiguration.lookupEntityClass(collectionTarget.getName());
+                    }
                     break checkCeiling;
                 } catch (NoSuchBeanDefinitionException e) {
                     // We weren't successful at looking at entity configuration to find the type of this collection.
@@ -566,6 +571,7 @@ public class AdornedTargetCollectionFieldMetadataProvider extends AdvancedCollec
             adornedTargetList.setTargetObjectPath(targetObjectProperty);
             adornedTargetList.setTargetIdProperty(targetObjectIdProperty);
             adornedTargetList.setJoinEntityClass(joinEntityClass);
+            adornedTargetList.setIdProperty((String) dynamicEntityDao.getIdMetadata(collectionTarget).get("name"));
             adornedTargetList.setAdornedTargetEntityClassname(collectionTarget.getName());
             adornedTargetList.setSortField(sortProperty);
             adornedTargetList.setSortAscending(isAscending);
@@ -573,6 +579,7 @@ public class AdornedTargetCollectionFieldMetadataProvider extends AdvancedCollec
         } else {
             AdornedTargetList adornedTargetList = new AdornedTargetList(field.getName(), parentObjectProperty, parentObjectIdProperty, targetObjectProperty, targetObjectIdProperty, collectionTarget.getName(), sortProperty, isAscending);
             adornedTargetList.setJoinEntityClass(joinEntityClass);
+            adornedTargetList.setIdProperty((String) dynamicEntityDao.getIdMetadata(collectionTarget).get("name"));
             adornedTargetList.setMutable(metadata.isMutable());
             persistencePerspective.addPersistencePerspectiveItem(PersistencePerspectiveItemType.ADORNEDTARGETLIST, adornedTargetList);
         }

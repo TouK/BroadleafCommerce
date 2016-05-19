@@ -19,6 +19,7 @@
  */
 package org.broadleafcommerce.profile.web.core;
 
+import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPersistedEvent;
@@ -59,19 +60,45 @@ public class CustomerStateRefresher implements ApplicationListener<CustomerPersi
         if (request != null) {
             String customerAttribute = CustomerStateRequestProcessor.getAnonymousCustomerSessionAttributeName();
             String customerIdAttribute = CustomerStateRequestProcessor.getAnonymousCustomerIdSessionAttributeName();
-            Customer sessionCustomer = (Customer) request.getAttribute(customerAttribute, WebRequest.SCOPE_GLOBAL_SESSION);
-            //invalidate the session-based customer if it's there and the ID is the same as the Customer that has been
-            //persisted
-            if (sessionCustomer != null && sessionCustomer.getId().equals(dbCustomer.getId())) {
-                request.removeAttribute(customerAttribute, WebRequest.SCOPE_GLOBAL_SESSION);
-                request.setAttribute(customerIdAttribute, dbCustomer.getId(), WebRequest.SCOPE_GLOBAL_SESSION);
+            if (BLCRequestUtils.isOKtoUseSession(request)) {
+                Customer sessionCustomer = (Customer) request.getAttribute(customerAttribute, WebRequest.SCOPE_GLOBAL_SESSION);
+                //invalidate the session-based customer if it's there and the ID is the same as the Customer that has been
+                //persisted
+                if (sessionCustomer != null && sessionCustomer.getId().equals(dbCustomer.getId())) {
+                    request.removeAttribute(customerAttribute, WebRequest.SCOPE_GLOBAL_SESSION);
+                    request.setAttribute(customerIdAttribute, dbCustomer.getId(), WebRequest.SCOPE_GLOBAL_SESSION);
+                }
             }
             
             //Update CustomerState if the persisted Customer ID is the same
             if (CustomerState.getCustomer() != null && CustomerState.getCustomer().getId().equals(dbCustomer.getId())) {
-                CustomerState.setCustomer(event.getCustomer());
+                //Copy transient fields from the customer that existed in CustomerState, prior to the DB refresh, 
+                //to the customer that has been saved (merged) in the DB....
+                Customer preMergedCustomer = CustomerState.getCustomer();
+                resetTransientFields(preMergedCustomer, dbCustomer);
+
+                CustomerState.setCustomer(dbCustomer);
             }
         }
     }
     
+    /**
+     * After a JPA merge occurs, there is a new object created representing the merged changes.  The new object does 
+     * not reflect the state of transient fields that may have been set on the object that was merged.
+     * 
+     * This method, by default, resets the state of transient properties. 
+     * and allows the user to override this method to set additional (or different) transient values.
+     * 
+     * @param preMergedCustome
+     * @param postMergedCustomer
+     */
+    protected void resetTransientFields(Customer preMergedCustomer, Customer postMergedCustomer) {
+        postMergedCustomer.setUnencodedPassword(preMergedCustomer.getUnencodedPassword());
+        postMergedCustomer.setUnencodedChallengeAnswer(preMergedCustomer.getUnencodedChallengeAnswer());
+        postMergedCustomer.setAnonymous(preMergedCustomer.isAnonymous());
+        postMergedCustomer.setCookied(preMergedCustomer.isCookied());
+        postMergedCustomer.setLoggedIn(preMergedCustomer.isLoggedIn());
+        postMergedCustomer.getTransientProperties().putAll(preMergedCustomer.getTransientProperties());
+    }
+
 }

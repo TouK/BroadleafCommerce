@@ -17,12 +17,15 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.common.money;
 
 import org.broadleafcommerce.common.currency.domain.BroadleafCurrency;
 import org.broadleafcommerce.common.money.util.CurrencyAdapter;
 import org.broadleafcommerce.common.util.xml.BigDecimalRoundingAdapter;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.io.Externalizable;
 import java.io.IOException;
@@ -40,8 +43,11 @@ import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
 @XmlAccessorType(XmlAccessType.FIELD)
+@JsonIgnoreProperties({
+        "zero"
+})
 public class Money implements Serializable, Cloneable, Comparable<Money>, Externalizable {
-    
+
     private static final long serialVersionUID = 1L;
 
     @XmlElement
@@ -51,7 +57,7 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
     @XmlElement
     @XmlJavaTypeAdapter(CurrencyAdapter.class)
     private final Currency currency;
-    
+
     public static final Money ZERO = new Money(BigDecimal.ZERO);
 
     protected static String getCurrencyCode(BroadleafCurrency blCurrency) {
@@ -147,7 +153,7 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
         this.currency = currency;
         this.amount = BankersRounding.setScale(BankersRounding.getScaleForCurrency(currency), amount);
     }
-    
+
     public Money(BigDecimal amount, Currency currency, int scale) {
         if (currency == null) {
             throw new IllegalArgumentException("currency cannot be null");
@@ -166,35 +172,43 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
 
     public Money add(Money other) {
         if (!other.getCurrency().equals(getCurrency())) {
-            if (
-                CurrencyConversionContext.getCurrencyConversionContext() != null &&
-                CurrencyConversionContext.getCurrencyConversionContext().size() > 0 &&
-                CurrencyConversionContext.getCurrencyConversionService() != null
-                ) {
+            if (CurrencyConversionContext.getCurrencyConversionContext() != null &&
+                    CurrencyConversionContext.getCurrencyConversionContext().size() > 0 &&
+                    CurrencyConversionContext.getCurrencyConversionService() != null) {
                 other = CurrencyConversionContext.getCurrencyConversionService().convertCurrency(other, getCurrency(), amount.scale());
             } else {
+                if (this == Money.ZERO) {
+                    return new Money(amount.add(other.amount), other.currency, amount.scale() == 0
+                            ? BankersRounding.getScaleForCurrency(other.currency) : amount.scale());
+                } else if (other == Money.ZERO) {
+                    return this;
+                }
                 throw new UnsupportedOperationException("No currency conversion service is registered, cannot add different currency " +
                         "types together (" + getCurrency().getCurrencyCode() + " " + other.getCurrency().getCurrencyCode() + ")");
             }
         }
-        
+
         return new Money(amount.add(other.amount), currency, amount.scale() == 0 ? BankersRounding.getScaleForCurrency(currency) : amount.scale());
     }
 
     public Money subtract(Money other) {
         if (!other.getCurrency().equals(getCurrency())) {
-            if (
-                CurrencyConversionContext.getCurrencyConversionContext() != null &&
-                CurrencyConversionContext.getCurrencyConversionContext().size() > 0 &&
-                CurrencyConversionContext.getCurrencyConversionService() != null
-                ) {
+            if (CurrencyConversionContext.getCurrencyConversionContext() != null &&
+                    CurrencyConversionContext.getCurrencyConversionContext().size() > 0 &&
+                    CurrencyConversionContext.getCurrencyConversionService() != null) {
                 other = CurrencyConversionContext.getCurrencyConversionService().convertCurrency(other, getCurrency(), amount.scale());
             } else {
+                if (other == Money.ZERO) {
+                    return this;
+                } else if (this == Money.ZERO) {
+                    return new Money(amount.subtract(other.amount), other.currency, amount.scale() == 0
+                            ? BankersRounding.getScaleForCurrency(other.currency) : amount.scale());
+                }
                 throw new UnsupportedOperationException("No currency conversion service is registered, cannot subtract different currency " +
                         "types (" + getCurrency().getCurrencyCode() + ", " + other.getCurrency().getCurrencyCode() + ")");
             }
         }
-        
+
         return new Money(amount.subtract(other.amount), currency, amount.scale() == 0 ? BankersRounding.getScaleForCurrency(currency) : amount.scale());
     }
 
@@ -243,12 +257,16 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
     }
 
     public Money min(Money other) {
-        if (other == null) { return this; }
+        if (other == null) {
+            return this;
+        }
         return lessThan(other) ? this : other;
     }
 
     public Money max(Money other) {
-        if (other == null) { return this; }
+        if (other == null) {
+            return this;
+        }
         return greaterThan(other) ? this : other;
     }
 
@@ -310,7 +328,8 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
         if (this == o) {
             return true;
         }
-        if (!(o instanceof Money)) {
+        if (o == null) return false;
+        if (!getClass().isAssignableFrom(o.getClass())) {
             return false;
         }
 
@@ -401,13 +420,13 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
     private static BigDecimal valueOf(double amount) {
         return valueOf(String.valueOf(amount));
     }
-    
+
     private static BigDecimal valueOf(String amount) {
         BigDecimal value = new BigDecimal(amount);
         if (value.scale() < 2) {
             value = value.setScale(BankersRounding.getScaleForCurrency(defaultCurrency()), RoundingMode.HALF_EVEN);
         }
-        
+
         return value;
     }
 
@@ -417,11 +436,9 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
      * @return The default currency to use when none is specified
      */
     public static Currency defaultCurrency() {
-        if (
-            CurrencyConsiderationContext.getCurrencyConsiderationContext() != null &&
-            CurrencyConsiderationContext.getCurrencyConsiderationContext().size() > 0 &&
-            CurrencyConsiderationContext.getCurrencyDeterminationService() != null
-        ) {
+        if (CurrencyConsiderationContext.getCurrencyConsiderationContext() != null &&
+                CurrencyConsiderationContext.getCurrencyConsiderationContext().size() > 0 &&
+                CurrencyConsiderationContext.getCurrencyDeterminationService() != null) {
             return Currency.getInstance(CurrencyConsiderationContext.getCurrencyDeterminationService().getCurrencyCode(CurrencyConsiderationContext.getCurrencyConsiderationContext()));
         }
 
@@ -429,9 +446,10 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
         BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
 
         if (brc != null && brc.getBroadleafCurrency() != null) {
-            assert brc.getBroadleafCurrency().getCurrencyCode()!=null;
+            assert brc.getBroadleafCurrency().getCurrencyCode() != null;
             return Currency.getInstance(brc.getBroadleafCurrency().getCurrencyCode());
         }
+
         if (System.getProperty("currency.default") != null) {
             return Currency.getInstance(System.getProperty("currency.default"));
         }
@@ -443,9 +461,9 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
     }
 
     @Override
-    public void readExternal(ObjectInput in) throws IOException,ClassNotFoundException {
+    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
         // Read in the server properties from the client representation.
-        amount = new BigDecimal( in.readFloat());
+        amount = new BigDecimal(in.readFloat());
 
     }
 
@@ -455,5 +473,5 @@ public class Money implements Serializable, Cloneable, Comparable<Money>, Extern
         out.writeFloat(amount.floatValue());
         // out.writeObject(currency);
     }
-    
+
 }

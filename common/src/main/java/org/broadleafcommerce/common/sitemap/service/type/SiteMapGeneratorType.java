@@ -46,6 +46,7 @@ public class SiteMapGeneratorType implements Serializable, BroadleafEnumerationT
 
     public static final SiteMapGeneratorType CATEGORY = new SiteMapGeneratorType("CATEGORY", "Category");
     public static final SiteMapGeneratorType PRODUCT = new SiteMapGeneratorType("PRODUCT", "Product");
+    public static final SiteMapGeneratorType SKU = new SiteMapGeneratorType("SKU", "Sku");
     public static final SiteMapGeneratorType PAGE = new SiteMapGeneratorType("PAGE", "Page");
     public static final SiteMapGeneratorType CUSTOM = new SiteMapGeneratorType("CUSTOM", "Custom");
 
@@ -94,7 +95,7 @@ public class SiteMapGeneratorType implements Serializable, BroadleafEnumerationT
             return true;
         if (obj == null)
             return false;
-        if (getClass() != obj.getClass())
+        if (!getClass().isAssignableFrom(obj.getClass()))
             return false;
         SiteMapGeneratorType other = (SiteMapGeneratorType) obj;
         if (type == null) {

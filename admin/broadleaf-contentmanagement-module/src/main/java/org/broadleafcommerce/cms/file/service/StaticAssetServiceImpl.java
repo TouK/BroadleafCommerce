@@ -22,11 +22,13 @@ package org.broadleafcommerce.cms.file.service;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.cms.field.type.StorageType;
+import org.broadleafcommerce.cms.file.StaticAssetMultiTenantExtensionManager;
 import org.broadleafcommerce.cms.file.dao.StaticAssetDao;
 import org.broadleafcommerce.cms.file.domain.ImageStaticAsset;
 import org.broadleafcommerce.cms.file.domain.ImageStaticAssetImpl;
 import org.broadleafcommerce.cms.file.domain.StaticAsset;
 import org.broadleafcommerce.cms.file.domain.StaticAssetImpl;
+import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.file.service.StaticAssetPathService;
 import org.broadleafcommerce.common.util.TransactionUtils;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.ImageArtifactProcessor;
@@ -36,12 +38,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import eu.medsea.mimeutil.MimeType;
-import eu.medsea.mimeutil.MimeUtil;
-import eu.medsea.mimeutil.detector.ExtensionMimeDetector;
-import eu.medsea.mimeutil.detector.MagicMimeMimeDetector;
-
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.Collection;
@@ -51,6 +49,11 @@ import java.util.Map;
 import java.util.Random;
 
 import javax.annotation.Resource;
+
+import eu.medsea.mimeutil.MimeType;
+import eu.medsea.mimeutil.MimeUtil;
+import eu.medsea.mimeutil.detector.ExtensionMimeDetector;
+import eu.medsea.mimeutil.detector.MagicMimeMimeDetector;
 
 /**
  * Created by bpolster.
@@ -74,6 +77,10 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     
     @Resource(name = "blStaticAssetPathService")
     protected StaticAssetPathService staticAssetPathService;
+
+    @Resource(name = "blStaticAssetMultiTenantExtensionManager")
+    protected StaticAssetMultiTenantExtensionManager staticAssetExtensionManager;
+
 
     private final Random random = new Random();
     private final String FILE_NAME_CHARS = "0123456789abcdef";
@@ -136,7 +143,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         String entityId = assetProperties.get("entityId");
         String fileName = assetProperties.get("fileName");
         
-        if (entityType != null) {
+        if (entityType != null && !"null".equals(entityType)) {
             path = path.append(entityType).append("/");
         }
 
@@ -162,30 +169,47 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Override
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public StaticAsset createStaticAssetFromFile(MultipartFile file, Map<String, String> properties) {
-        
+        try {
+            return createStaticAsset(file.getInputStream(), file.getOriginalFilename(), file.getSize(), properties);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
+    public StaticAsset createStaticAsset(InputStream inputStream, String fileName, long fileSize, Map<String, String> properties) {
         if (properties == null) {
             properties = new HashMap<String, String>();
         }
 
-        String fullUrl = buildAssetURL(properties, file.getOriginalFilename());
+        String fullUrl = buildAssetURL(properties, fileName);
+        StringBuilder urlBuilder = new StringBuilder();
+        urlBuilder.append(fullUrl);
+        ExtensionResultStatusType resultStatusType = staticAssetExtensionManager.getProxy().modifyDuplicateAssetURL(urlBuilder);
+        fullUrl = urlBuilder.toString();
         StaticAsset newAsset = staticAssetDao.readStaticAssetByFullUrl(fullUrl);
-        int count = 0;
-        while (newAsset != null) {
-            count++;
-            
-            //try the new format first, then the old
-            newAsset = staticAssetDao.readStaticAssetByFullUrl(getCountUrl(fullUrl, count, false));
-            if (newAsset == null) {
-                newAsset = staticAssetDao.readStaticAssetByFullUrl(getCountUrl(fullUrl, count, true));
+        // If no ExtensionManager modified the URL to handle duplicates, then go ahead and run default
+        // logic for handling duplicate files.
+        if(resultStatusType != ExtensionResultStatusType.HANDLED){
+            int count = 0;
+            while (newAsset != null) {
+                count++;
+                //try the new format first, then the old
+                newAsset = staticAssetDao.readStaticAssetByFullUrl(getCountUrl(fullUrl, count, false));
+                if (newAsset == null) {
+                    newAsset = staticAssetDao.readStaticAssetByFullUrl(getCountUrl(fullUrl, count, true));
+                }
+            }
+
+            if (count > 0) {
+                fullUrl = getCountUrl(fullUrl, count, false);
             }
         }
 
-        if (count > 0) {
-            fullUrl = getCountUrl(fullUrl, count, false);
-        }
 
         try {
-            ImageMetadata metadata = imageArtifactProcessor.getImageMetadata(file.getInputStream());
+            ImageMetadata metadata = imageArtifactProcessor.getImageMetadata(inputStream);
             newAsset = new ImageStaticAssetImpl();
             ((ImageStaticAsset) newAsset).setWidth(metadata.getWidth());
             ((ImageStaticAsset) newAsset).setHeight(metadata.getHeight());
@@ -199,10 +223,10 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             newAsset.setStorageType(StorageType.DATABASE);
         }
 
-        newAsset.setName(file.getOriginalFilename());
-        getMimeType(file, newAsset);
-        newAsset.setFileExtension(getFileExtension(file.getOriginalFilename()));
-        newAsset.setFileSize(file.getSize());
+        newAsset.setName(fileName);
+        getMimeType(inputStream, fileName, newAsset);
+        newAsset.setFileExtension(getFileExtension(fileName));
+        newAsset.setFileSize(fileSize);
         newAsset.setFullUrl(fullUrl);
 
         return staticAssetDao.addOrUpdateStaticAsset(newAsset, false);
@@ -214,7 +238,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
      *  /path/to/image.jpg-1
      *  /path/to/image.jpg-2
      *  
-     * Whereas if this is in non-lagacy format (<b>legacy</b> == false):
+     * Whereas if this is in non-legacy format (<b>legacy</b> == false):
      * 
      *  /path/to/image-1.jpg
      *  /path/to/image-2.jpg
@@ -232,17 +256,13 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         return countUrl;
     }
 
-    protected void getMimeType(MultipartFile file, StaticAsset newAsset) {
-        Collection mimeTypes = MimeUtil.getMimeTypes(file.getOriginalFilename());
+    protected void getMimeType(InputStream inputStream, String fileName, StaticAsset newAsset) {
+        Collection mimeTypes = MimeUtil.getMimeTypes(fileName);
         if (!mimeTypes.isEmpty()) {
             MimeType mimeType = (MimeType) mimeTypes.iterator().next();
             newAsset.setMimeType(mimeType.toString());
         } else {
-            try {
-                mimeTypes = MimeUtil.getMimeTypes(file.getInputStream());
-            } catch (IOException ioe) {
-                throw new RuntimeException(ioe);
-            }
+            mimeTypes = MimeUtil.getMimeTypes(inputStream);
             if (!mimeTypes.isEmpty()) {
                 MimeType mimeType = (MimeType) mimeTypes.iterator().next();
                 newAsset.setMimeType(mimeType.toString());
@@ -296,6 +316,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         return staticAssetPathService.getStaticAssetEnvironmentSecureUrlPrefix();
     }
 
+    @Override
     public String convertAssetPath(String assetPath, String contextPath, boolean secureRequest) {
         return staticAssetPathService.convertAssetPath(assetPath, contextPath, secureRequest);
     }

@@ -20,6 +20,7 @@
 package org.broadleafcommerce.openadmin.dto;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.presentation.client.PersistencePerspectiveItemType;
 
 import java.io.Serializable;
@@ -44,6 +45,9 @@ public class PersistencePackage implements Serializable, StateDescriptor {
     protected Map<String, PersistencePackage> subPackages = new LinkedHashMap<String, PersistencePackage>();
     protected boolean validateUnsubmittedProperties = true;
     protected SectionCrumb[] sectionCrumbs;
+
+    //internalUsage
+    protected boolean isProcessedInternal = false;
 
     public PersistencePackage(String ceilingEntityFullyQualifiedClassname, Entity entity, PersistencePerspective persistencePerspective, String[] customCriteria, String csrfToken) {
         this(ceilingEntityFullyQualifiedClassname, null, entity, persistencePerspective, customCriteria, csrfToken);
@@ -87,6 +91,9 @@ public class PersistencePackage implements Serializable, StateDescriptor {
     }
     
     public String getSecurityCeilingEntityFullyQualifiedClassname() {
+        if (StringUtils.isBlank(securityCeilingEntityFullyQualifiedClassname)) {
+            return ceilingEntityFullyQualifiedClassname;
+        }
         return securityCeilingEntityFullyQualifiedClassname;
     }
 
@@ -127,10 +134,18 @@ public class PersistencePackage implements Serializable, StateDescriptor {
         if (ArrayUtils.isEmpty(customCriteria)) {
             return -1;
         }
-        Arrays.sort(customCriteria);
-        return Arrays.binarySearch(customCriteria, criteria);
-    }
+        
+        for (int i = 0; i < customCriteria.length; i++) {
+            if (customCriteria[i] != null && customCriteria[i].equals(criteria)) {
+                return i;
+            } else if (customCriteria[i] == null && criteria == null) {
+                return i;
+            }
+        }
 
+        return -1;
+    }
+    
     public Entity getEntity() {
         return entity;
     }
@@ -232,10 +247,49 @@ public class PersistencePackage implements Serializable, StateDescriptor {
         return sectionCrumbs[0];
     }
 
+    /**
+     * Internally used field when passing the persistence package through the admin pipeline
+     *
+     * @return whether or not this persistence package has been exposed to a internal processing step
+     */
+    public boolean isProcessedInternal() {
+        return isProcessedInternal;
+    }
+
+    /**
+     * Internally used field when passing the persistence package through the admin pipeline
+     *
+     * @param isProcessedInternal whether or not this persistence package has been exposed to a internal processing step
+     */
+    public void setProcessedInternal(boolean isProcessedInternal) {
+        this.isProcessedInternal = isProcessedInternal;
+    }
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("PersistencePackage{");
+        sb.append("ceilingEntityFullyQualifiedClassname='").append(ceilingEntityFullyQualifiedClassname).append('\'');
+        sb.append(", securityCeilingEntityFullyQualifiedClassname='").append
+                (securityCeilingEntityFullyQualifiedClassname).append('\'');
+        sb.append(", sectionEntityField='").append(sectionEntityField).append('\'');
+        sb.append(", fetchTypeFullyQualifiedClassname='").append(fetchTypeFullyQualifiedClassname).append('\'');
+        sb.append(", persistencePerspective=").append(persistencePerspective);
+        sb.append(", customCriteria=").append(Arrays.toString(customCriteria));
+        sb.append(", entity=").append(entity);
+        sb.append(", csrfToken='").append(csrfToken).append('\'');
+        sb.append(", requestingEntityName='").append(requestingEntityName).append('\'');
+        sb.append(", subPackages=").append(subPackages);
+        sb.append(", validateUnsubmittedProperties=").append(validateUnsubmittedProperties);
+        sb.append(", sectionCrumbs=").append(Arrays.toString(sectionCrumbs));
+        sb.append('}');
+        return sb.toString();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof PersistencePackage)) return false;
+        if (o == null) return false;
+        if (!getClass().isAssignableFrom(o.getClass())) return false;
 
         PersistencePackage that = (PersistencePackage) o;
 

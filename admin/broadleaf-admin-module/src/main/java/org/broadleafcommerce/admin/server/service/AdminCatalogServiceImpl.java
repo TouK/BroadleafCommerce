@@ -22,6 +22,9 @@ package org.broadleafcommerce.admin.server.service;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.admin.server.service.extension.AdminCatalogServiceExtensionManager;
+import org.broadleafcommerce.common.extension.ExtensionResultHolder;
+import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.util.BLCCollectionUtils;
 import org.broadleafcommerce.common.util.TypedTransformer;
 import org.broadleafcommerce.core.catalog.dao.SkuDao;
@@ -42,7 +45,7 @@ import javax.persistence.PersistenceContext;
 
 /**
  * 
- * @author Phillip Verheyden
+ * @author Phillip Verheyden\
  *
  */
 @Service("blAdminCatalogService")
@@ -58,6 +61,9 @@ public class AdminCatalogServiceImpl implements AdminCatalogService {
 
     @PersistenceContext(unitName="blPU")
     protected EntityManager em;
+
+    @Resource(name = "blAdminCatalogServiceExtensionManager")
+    protected AdminCatalogServiceExtensionManager extensionManager;
     
     @Override
     public Integer generateSkusFromProduct(Long productId) {
@@ -68,6 +74,12 @@ public class AdminCatalogServiceImpl implements AdminCatalogService {
         }
         
         List<List<ProductOptionValue>> allPermutations = generatePermutations(0, new ArrayList<ProductOptionValue>(), product.getProductOptions());
+
+        // return -2 to indicate that one of the Product Options used in Sku generation has no Allowed Values
+        if (allPermutations == null) {
+            return -2;
+        }
+
         LOG.info("Total number of permutations: " + allPermutations.size());
         LOG.info(allPermutations);
         
@@ -95,23 +107,18 @@ public class AdminCatalogServiceImpl implements AdminCatalogService {
                 permutationsToGenerate.add(permutation);
             }
         }
+
         int numPermutationsCreated = 0;
-        //For each permutation, I need them to map to a specific Sku
-        for (List<ProductOptionValue> permutation : permutationsToGenerate) {
-            if (permutation.isEmpty()) continue;
-            Sku permutatedSku = catalogService.createSku();
-            permutatedSku.setProduct(product);
-            permutatedSku.setProductOptionValues(permutation);
-            permutatedSku = catalogService.saveSku(permutatedSku);
-            product.getAdditionalSkus().add(permutatedSku);
-            numPermutationsCreated++;
-        }
-        if (numPermutationsCreated != 0) {
-            catalogService.saveProduct(product);
+        if (extensionManager != null) {
+            ExtensionResultHolder<Integer> result = new ExtensionResultHolder<Integer>();
+            ExtensionResultStatusType resultStatusType = extensionManager.getProxy().persistSkuPermutation(product, permutationsToGenerate, result);
+            if (ExtensionResultStatusType.HANDLED == resultStatusType) {
+                numPermutationsCreated = result.getResult();
+            }
         }
         return numPermutationsCreated;
     }
-    
+
     protected boolean isSamePermutation(List<ProductOptionValue> perm1, List<ProductOptionValue> perm2) {
         if (perm1.size() == perm2.size()) {
             
@@ -154,6 +161,10 @@ public class AdminCatalogServiceImpl implements AdminCatalogService {
             //end it here and return the current list of permutations.
             result.addAll(generatePermutations(currentTypeIndex + 1, currentPermutation, options));
             return result;
+        }
+        // Check to make sure there is at least 1 Allowed Value, else prevent generation
+        if (currentOption.getAllowedValues().isEmpty()) {
+            return null;
         }
         for (ProductOptionValue option : currentOption.getAllowedValues()) {
             List<ProductOptionValue> permutation = new ArrayList<ProductOptionValue>();

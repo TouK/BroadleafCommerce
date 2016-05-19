@@ -17,11 +17,15 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.core.web.api.wrapper;
 
 import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.common.util.xml.ISO8601DateAdapter;
 import org.broadleafcommerce.core.catalog.domain.Sku;
+import org.broadleafcommerce.core.catalog.service.CatalogService;
+import org.broadleafcommerce.core.inventory.service.type.InventoryType;
+import org.springframework.context.ApplicationContext;
 
 import java.util.Date;
 
@@ -40,7 +44,7 @@ import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
  */
 @XmlRootElement(name = "sku")
 @XmlAccessorType(value = XmlAccessType.FIELD)
-public class SkuWrapper extends BaseWrapper implements APIWrapper<Sku> {
+public class SkuWrapper extends BaseWrapper implements APIWrapper<Sku>, APIUnwrapper<Sku> {
 
     @XmlElement
     protected Long id;
@@ -58,7 +62,7 @@ public class SkuWrapper extends BaseWrapper implements APIWrapper<Sku> {
 
     @XmlElement
     protected Boolean active;
-    
+
     @XmlElement
     protected String inventoryType;
 
@@ -67,16 +71,16 @@ public class SkuWrapper extends BaseWrapper implements APIWrapper<Sku> {
 
     @XmlElement
     protected Money retailPrice;
-    
+
     @XmlElement
     protected Money salePrice;
-    
+
     @XmlElement
     protected WeightWrapper weight;
 
     @XmlElement
     protected DimensionWrapper dimension;
-    
+
     @Override
     public void wrapDetails(Sku model, HttpServletRequest request) {
         this.id = model.getId();
@@ -90,20 +94,130 @@ public class SkuWrapper extends BaseWrapper implements APIWrapper<Sku> {
         if (model.getInventoryType() != null) {
             this.inventoryType = model.getInventoryType().getType();
         }
-        
-        if (model.getWeight() != null){
-            weight = (WeightWrapper)context.getBean(WeightWrapper.class.getName());
+
+        if (model.getWeight() != null) {
+            weight = (WeightWrapper) context.getBean(WeightWrapper.class.getName());
             weight.wrapDetails(model.getWeight(), request);
         }
 
-        if (model.getDimension() != null){
-            dimension = (DimensionWrapper)context.getBean(DimensionWrapper.class.getName());
+        if (model.getDimension() != null) {
+            dimension = (DimensionWrapper) context.getBean(DimensionWrapper.class.getName());
             dimension.wrapDetails(model.getDimension(), request);
         }
+    }
+
+    /**
+     * restful method to convert the wrapper in a domain object.
+     * None of its basic type or object fields are assumed. Of those child object present, 
+     * no database presence is assumed. No "calculated" (i.e. active) fields are processed.
+     */
+    @Override
+    public Sku unwrap(HttpServletRequest request, ApplicationContext context) {
+        CatalogService catalogService = (CatalogService) context.getBean("blCatalogService");
+        Sku sku = catalogService.createSku();
+
+        sku.setId(this.id);
+        sku.setName(this.name);
+        sku.setActiveEndDate(this.activeEndDate);
+        sku.setActiveStartDate(this.activeStartDate);
+        sku.setInventoryType(InventoryType.getInstance(this.inventoryType));
+        sku.setRetailPrice(this.retailPrice);
+        sku.setSalePrice(this.salePrice);
+        sku.setDimension(this.getDimension().unwrap(request, context));
+        sku.setWeight(this.getWeight().unwrap(request, context));
+        return sku;
     }
 
     @Override
     public void wrapSummary(Sku model, HttpServletRequest request) {
         wrapDetails(model, request);
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Date getActiveStartDate() {
+        return activeStartDate;
+    }
+
+    public void setActiveStartDate(Date activeStartDate) {
+        this.activeStartDate = activeStartDate;
+    }
+
+    public Date getActiveEndDate() {
+        return activeEndDate;
+    }
+
+    public void setActiveEndDate(Date activeEndDate) {
+        this.activeEndDate = activeEndDate;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Boolean getActive() {
+        return active;
+    }
+
+    public void setActive(Boolean active) {
+        this.active = active;
+    }
+
+    public String getInventoryType() {
+        return inventoryType;
+    }
+
+    public void setInventoryType(String inventoryType) {
+        this.inventoryType = inventoryType;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public Money getRetailPrice() {
+        return retailPrice;
+    }
+
+    public void setRetailPrice(Money retailPrice) {
+        this.retailPrice = retailPrice;
+    }
+
+    public Money getSalePrice() {
+        return salePrice;
+    }
+
+    public void setSalePrice(Money salePrice) {
+        this.salePrice = salePrice;
+    }
+
+    public WeightWrapper getWeight() {
+        return weight;
+    }
+
+    public void setWeight(WeightWrapper weight) {
+        this.weight = weight;
+    }
+
+    public DimensionWrapper getDimension() {
+        return dimension;
+    }
+
+    public void setDimension(DimensionWrapper dimension) {
+        this.dimension = dimension;
     }
 }

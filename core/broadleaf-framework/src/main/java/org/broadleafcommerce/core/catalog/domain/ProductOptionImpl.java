@@ -20,44 +20,32 @@
 package org.broadleafcommerce.core.catalog.domain;
 
 import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
-import org.broadleafcommerce.common.extensibility.jpa.clone.ClonePolicyCollection;
+import org.broadleafcommerce.common.copy.CreateResponse;
+import org.broadleafcommerce.common.copy.MultiTenantCopyContext;
+import org.broadleafcommerce.common.extensibility.jpa.clone.ClonePolicyCollectionOverride;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransform;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMember;
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
-import org.broadleafcommerce.common.extension.ExtensionResultHolder;
-import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.i18n.service.DynamicTranslationProvider;
-import org.broadleafcommerce.common.presentation.AdminPresentation;
-import org.broadleafcommerce.common.presentation.AdminPresentationClass;
-import org.broadleafcommerce.common.presentation.AdminPresentationCollection;
-import org.broadleafcommerce.common.presentation.PopulateToOneFieldsEnum;
+import org.broadleafcommerce.common.presentation.*;
 import org.broadleafcommerce.common.presentation.client.AddMethodType;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
-import org.broadleafcommerce.common.web.BroadleafRequestContext;
-import org.broadleafcommerce.core.catalog.extension.ProductOptionEntityExtensionManager;
+import org.broadleafcommerce.common.presentation.client.VisibilityEnum;
 import org.broadleafcommerce.core.catalog.service.type.ProductOptionType;
 import org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationStrategyType;
 import org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationType;
-import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.*;
 import org.hibernate.annotations.Cache;
-import org.hibernate.annotations.CacheConcurrencyStrategy;
-import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.Parameter;
 
+import javax.persistence.CascadeType;
+import javax.persistence.*;
+import javax.persistence.Entity;
+import javax.persistence.OrderBy;
+import javax.persistence.Table;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import javax.persistence.CascadeType;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.Id;
-import javax.persistence.Inheritance;
-import javax.persistence.InheritanceType;
-import javax.persistence.OneToMany;
-import javax.persistence.OrderBy;
-import javax.persistence.Table;
 
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
@@ -66,7 +54,6 @@ import javax.persistence.Table;
 @AdminPresentationClass(friendlyName = "ProductOptionImpl_baseProductOption", populateToOneFields=PopulateToOneFieldsEnum.TRUE)
 @DirectCopyTransform({
         @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.SANDBOX, skipOverlaps=true),
-        @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.SANDBOX_PRECLONE_INFORMATION),
         @DirectCopyTransformMember(templateTokens = DirectCopyTransformTypes.MULTITENANT_CATALOG)
 })
 public class ProductOptionImpl implements ProductOption, AdminMainEntity {
@@ -91,7 +78,7 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
     protected String type;
     
     @Column(name = "ATTRIBUTE_NAME")
-    @AdminPresentation(friendlyName = "productOption_name", helpText = "productOption_nameHelp")
+    @AdminPresentation(friendlyName = "productOption_name", helpText = "productOption_nameHelp", requiredOverride = RequiredOverride.REQUIRED)
     protected String attributeName;
     
     @Column(name = "LABEL")
@@ -105,8 +92,8 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
     protected Boolean required;
 
     @Column(name = "USE_IN_SKU_GENERATION")
-    @AdminPresentation(friendlyName = "productOption_UseInSKUGeneration")
-    private Boolean useInSkuGeneration;
+    @AdminPresentation(friendlyName = "productOption_UseInSKUGeneration", defaultValue = "true")
+    private Boolean useInSkuGeneration = Boolean.TRUE;
 
     @Column(name = "DISPLAY_ORDER")
     @AdminPresentation(friendlyName = "productOption_displayOrder")
@@ -117,7 +104,9 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
     private String productOptionValidationStrategyType;
 
     @Column(name = "VALIDATION_TYPE")
-    @AdminPresentation(friendlyName = "productOption_validationType", group = "productOption_validation", fieldType = SupportedFieldType.BROADLEAF_ENUMERATION, broadleafEnumeration = "org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationType")
+    @AdminPresentation(friendlyName = "productOption_validationType", visibility = VisibilityEnum.HIDDEN_ALL,
+            group = "productOption_validation", fieldType = SupportedFieldType.BROADLEAF_ENUMERATION,
+            broadleafEnumeration = "org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationType")
     private String productOptionValidationType;
 
     @Column(name = "VALIDATION_STRING")
@@ -136,12 +125,12 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
     @OrderBy(value = "displayOrder")
     @AdminPresentationCollection(addType = AddMethodType.PERSIST, friendlyName = "ProductOptionImpl_Allowed_Values")
-    @ClonePolicyCollection
     protected List<ProductOptionValue> allowedValues = new ArrayList<ProductOptionValue>();
 
     @OneToMany(targetEntity = ProductOptionXrefImpl.class, mappedBy = "productOption")
     @Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region="blStandardElements")
     @BatchSize(size = 50)
+    @ClonePolicyCollectionOverride
     protected List<ProductOptionXref> products = new ArrayList<ProductOptionXref>();
     
     @Override
@@ -206,16 +195,6 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
 
     @Override
     public List<ProductOptionXref> getProductXrefs() {
-        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext();
-        if (context != null && context.getAdditionalProperties().containsKey("blProductOptionEntityExtensionManager")) {
-            ProductOptionEntityExtensionManager extensionManager = (ProductOptionEntityExtensionManager) context.getAdditionalProperties().get("blProductOptionEntityExtensionManager");
-            ExtensionResultHolder holder = new ExtensionResultHolder();
-            ExtensionResultStatusType result = extensionManager.getProxy().getProductXrefs(this, holder);
-            if (ExtensionResultStatusType.HANDLED.equals(result)) {
-                return (List<ProductOptionXref>) holder.getResult();
-            }
-        }
-
         return products;
     }
 
@@ -313,4 +292,33 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity {
         return getLabel();
     }
 
+    @Override
+    public <G extends ProductOption> CreateResponse<G> createOrRetrieveCopyInstance(MultiTenantCopyContext context) throws CloneNotSupportedException {
+        CreateResponse<G> createResponse = context.createOrRetrieveCopyInstance(this);
+        if (createResponse.isAlreadyPopulated()) {
+            return createResponse;
+        }
+        ProductOption cloned = createResponse.getClone();
+        cloned.setAttributeName(attributeName);
+        cloned.setDisplayOrder(displayOrder);
+        cloned.setErrorMessage(errorMessage);
+        cloned.setErrorCode(errorCode);
+        cloned.setLabel(label);
+        cloned.setRequired(getRequired());
+        cloned.setUseInSkuGeneration(getUseInSkuGeneration());
+        cloned.setValidationString(validationString);
+        cloned.setType(getType());
+        cloned.setProductOptionValidationStrategyType(getProductOptionValidationStrategyType());
+        cloned.setProductOptionValidationType(getProductOptionValidationType());
+        for(ProductOptionValue entry : allowedValues){
+            ProductOptionValue clonedEntry = entry.createOrRetrieveCopyInstance(context).getClone();
+            cloned.getAllowedValues().add(clonedEntry);
+        }
+        for(ProductOptionXref entry : products){
+            ProductOptionXref clonedEntry = entry.createOrRetrieveCopyInstance(context).getClone();
+            cloned.getProductXrefs().add(clonedEntry);
+        }
+
+        return createResponse;
+    }
 }

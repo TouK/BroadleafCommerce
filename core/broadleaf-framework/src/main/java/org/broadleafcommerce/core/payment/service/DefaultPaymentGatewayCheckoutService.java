@@ -21,9 +21,12 @@
 package org.broadleafcommerce.core.payment.service;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.i18n.domain.ISOCountry;
+import org.broadleafcommerce.common.i18n.service.ISOService;
 import org.broadleafcommerce.common.payment.PaymentAdditionalFieldType;
 import org.broadleafcommerce.common.payment.PaymentGatewayType;
-import org.broadleafcommerce.common.payment.PaymentType;
 import org.broadleafcommerce.common.payment.dto.AddressDTO;
 import org.broadleafcommerce.common.payment.dto.GatewayCustomerDTO;
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO;
@@ -50,7 +53,6 @@ import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.PhoneService;
 import org.broadleafcommerce.profile.core.service.StateService;
-import org.mortbay.log.Log;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -69,13 +71,15 @@ import javax.annotation.Resource;
  */
 @Service("blPaymentGatewayCheckoutService")
 public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheckoutService {
+    
+    private static final Log LOG = LogFactory.getLog(DefaultPaymentGatewayCheckoutService.class);
 
     @Resource(name = "blOrderService")
     protected OrderService orderService;
     
     @Resource(name = "blOrderPaymentService")
     protected OrderPaymentService orderPaymentService;
-    
+
     @Resource(name = "blCheckoutService")
     protected CheckoutService checkoutService;
     
@@ -87,6 +91,9 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
     
     @Resource(name = "blCountryService")
     protected CountryService countryService;
+
+    @Resource(name = "blISOService")
+    protected ISOService isoService;
     
     @Resource(name = "blPhoneService")
     protected PhoneService phoneService;
@@ -139,36 +146,6 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         // If the gateway sends back Shipping Information, we will save that to the first shippable fulfillment group.
         populateShippingInfo(responseDTO, order);
 
-        // If this gateway does not support multiple payments then mark all of the existing payments
-        // as invalid before adding the new one
-        List<OrderPayment> paymentsToInvalidate = new ArrayList<OrderPayment>();
-        Address tempBillingAddress = null;
-        if (!config.handlesMultiplePayments()) {
-            PaymentGatewayType gateway = config.getGatewayType();
-            for (OrderPayment payment : order.getPayments()) {
-                // There may be a temporary Order Payment on the Order (e.g. to save the billing address)
-                // This will be marked as invalid, as the billing address that will be saved on the order will be parsed off the
-                // Response DTO sent back from the Gateway as it may have Address Verification or Standardization.
-                // If you do not wish to use the Billing Address coming back from the Gateway, you can override the
-                // populateBillingInfo() method
-                if (PaymentGatewayType.TEMPORARY.equals(payment.getGatewayType()) ||
-                        (payment.getGatewayType() != null && payment.getGatewayType().equals(gateway))) {
-
-                    paymentsToInvalidate.add(payment);
-
-                    if (PaymentType.CREDIT_CARD.equals(payment.getType()) &&
-                            PaymentGatewayType.TEMPORARY.equals(payment.getGatewayType()) ) {
-                        tempBillingAddress = payment.getBillingAddress();
-                    }
-                }
-            }
-        }
-
-        for (OrderPayment payment : paymentsToInvalidate) {
-            order.getPayments().remove(payment);
-            markPaymentAsInvalid(payment.getId());
-        }
-
         // ALWAYS create a new order payment for the payment that comes in. Invalid payments should be cleaned up by
         // invoking {@link #markPaymentAsInvalid}.
         OrderPayment payment = orderPaymentService.create();
@@ -176,6 +153,39 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         payment.setPaymentGatewayType(responseDTO.getPaymentGatewayType());
         payment.setAmount(responseDTO.getAmount());
 
+        // If this gateway does not support multiple payments then mark all of the existing payments
+        // as invalid before adding the new one
+        List<OrderPayment> paymentsToInvalidate = new ArrayList<OrderPayment>();
+        Address tempBillingAddress = null;
+        if (!config.handlesMultiplePayments()) {
+            PaymentGatewayType gateway = config.getGatewayType();
+            for (OrderPayment p : order.getPayments()) {
+                // A Payment on the order will be invalidated if:
+                // - It's a temporary order payment: There may be a temporary Order Payment on the Order (e.g. to save the billing address)
+                // - The payment being added is a Final Payment and there already exists a Final Payment
+                // - The payment being added has the same gateway type of an existing one.
+                if (PaymentGatewayType.TEMPORARY.equals(p.getGatewayType()) ||
+                        (p.isFinalPayment() && payment.isFinalPayment()) ||
+                        (p.getGatewayType() != null && p.getGatewayType().equals(gateway))) {
+
+                    paymentsToInvalidate.add(p);
+
+                    if (PaymentGatewayType.TEMPORARY.equals(p.getGatewayType()) ) {
+                        tempBillingAddress = p.getBillingAddress();
+                    }
+                }
+            }
+        }
+
+        for (OrderPayment invalid : paymentsToInvalidate) {
+            // 2
+            markPaymentAsInvalid(invalid.getId());
+        }
+
+        // The billing address that will be saved on the order will be parsed off the
+        // Response DTO sent back from the Gateway as it may have Address Verification or Standardization.
+        // If you do not wish to use the Billing Address coming back from the Gateway, you can override the
+        // populateBillingInfo() method or set the useBillingAddressFromGateway property.
         populateBillingInfo(responseDTO, payment, tempBillingAddress);
         
         // Create the transaction for the payment
@@ -189,8 +199,7 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         }
 
         //Set the Credit Card Info on the Additional Fields Map
-        if (PaymentType.CREDIT_CARD.equals(responseDTO.getPaymentType()) &&
-                responseDTO.getCreditCard().creditCardPopulated()) {
+        if (responseDTO.getCreditCard() != null && responseDTO.getCreditCard().creditCardPopulated()) {
 
             transaction.getAdditionalFields().put(PaymentAdditionalFieldType.NAME_ON_CARD.getType(),
                     responseDTO.getCreditCard().getCreditCardHolderName());
@@ -208,6 +217,7 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         payment.setOrder(order);
         transaction.setOrderPayment(payment);
         payment.addTransaction(transaction);
+
         payment = orderPaymentService.save(payment);
 
         if (transaction.getSuccess()) {
@@ -226,79 +236,70 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         if (responseDTO.getBillTo() != null && isUseBillingAddressFromGateway()) {
             billingAddress = addressService.create();
             AddressDTO<PaymentResponseDTO> billToDTO = responseDTO.getBillTo();
-            billingAddress.setFirstName(billToDTO.getAddressFirstName());
-            billingAddress.setLastName(billToDTO.getAddressLastName());
-            billingAddress.setAddressLine1(billToDTO.getAddressLine1());
-            billingAddress.setAddressLine2(billToDTO.getAddressLine2());
-            billingAddress.setCity(billToDTO.getAddressCityLocality());
-
-            //TODO: what happens if State and Country cannot be found?
-            State state = stateService.findStateByAbbreviation(billToDTO.getAddressStateRegion());
-            if (state == null) {
-                Log.warn("The given state from the response: " + billToDTO.getAddressStateRegion() + " could not be found"
-                        + " as a state abbreviation in BLC_STATE");
-            }
-            billingAddress.setState(state);
-
-            billingAddress.setPostalCode(billToDTO.getAddressPostalCode());
-
-            Country country = countryService.findCountryByAbbreviation(billToDTO.getAddressCountryCode());
-            if (country == null) {
-                Log.warn("The given country from the response: " + billToDTO.getAddressCountryCode() + " could not be found"
-                        + " as a country abbreviation in BLC_COUNTRY");
-            }
-            billingAddress.setCountry(country);
-
-            if (billToDTO.getAddressPhone() != null) {
-                Phone billingPhone = phoneService.create();
-                billingPhone.setPhoneNumber(billToDTO.getAddressPhone());
-                billingAddress.setPhonePrimary(billingPhone);
-            }
+            populateAddressInfo(billingAddress, billToDTO);
         }
 
         payment.setBillingAddress(billingAddress);
-
     }
-
+    
     protected void populateShippingInfo(PaymentResponseDTO responseDTO, Order order) {
         FulfillmentGroup shippableFulfillmentGroup = fulfillmentGroupService.getFirstShippableFulfillmentGroup(order);
         Address shippingAddress = null;
         if (responseDTO.getShipTo() != null && shippableFulfillmentGroup != null) {
             shippingAddress = addressService.create();
             AddressDTO<PaymentResponseDTO> shipToDTO = responseDTO.getShipTo();
-            shippingAddress.setFirstName(shipToDTO.getAddressFirstName());
-            shippingAddress.setLastName(shipToDTO.getAddressLastName());
-            shippingAddress.setAddressLine1(shipToDTO.getAddressLine1());
-            shippingAddress.setAddressLine2(shipToDTO.getAddressLine2());
-            shippingAddress.setCity(shipToDTO.getAddressCityLocality());
-
-            State state = stateService.findStateByAbbreviation(shipToDTO.getAddressStateRegion());
-            if (state == null) {
-                Log.warn("The given state from the response: " + shipToDTO.getAddressStateRegion() + " could not be found"
-                        + " as a state abbreviation in BLC_STATE");
-            }
-            shippingAddress.setState(state);
-
-            shippingAddress.setPostalCode(shipToDTO.getAddressPostalCode());
-
-            Country country = countryService.findCountryByAbbreviation(shipToDTO.getAddressCountryCode());
-            if (country == null) {
-                Log.warn("The given country from the response: " + shipToDTO.getAddressCountryCode() + " could not be found"
-                        + " as a country abbreviation in BLC_COUNTRY");
-            }
-            shippingAddress.setCountry(country);
-
-            if (shipToDTO.getAddressPhone() != null) {
-                Phone shippingPhone = phoneService.create();
-                shippingPhone.setPhoneNumber(shipToDTO.getAddressPhone());
-                shippingAddress.setPhonePrimary(shippingPhone);
-            }
-
+            populateAddressInfo(shippingAddress, shipToDTO);
+            
             shippableFulfillmentGroup = fulfillmentGroupService.findFulfillmentGroupById(shippableFulfillmentGroup.getId());
             if (shippableFulfillmentGroup != null) {
                 shippableFulfillmentGroup.setAddress(shippingAddress);
                 fulfillmentGroupService.save(shippableFulfillmentGroup);
             }
+        }
+    }
+    
+    protected void populateAddressInfo(Address address, AddressDTO<PaymentResponseDTO> dto) {
+        address.setFirstName(dto.getAddressFirstName());
+        address.setLastName(dto.getAddressLastName());
+        address.setFullName(dto.getAddressFirstName() + " " + dto.getAddressLastName());
+        address.setAddressLine1(dto.getAddressLine1());
+        address.setAddressLine2(dto.getAddressLine2());
+        address.setCity(dto.getAddressCityLocality());
+
+        State state = null;
+        if(dto.getAddressStateRegion() != null) {
+            state = stateService.findStateByAbbreviation(dto.getAddressStateRegion());
+        }
+        if (state == null) {
+            LOG.warn("The given state from the response: " + dto.getAddressStateRegion() + " could not be found"
+                    + " as a state abbreviation in BLC_STATE");
+        }
+        address.setState(state);
+        address.setStateProvinceRegion(dto.getAddressStateRegion());
+
+        address.setPostalCode(dto.getAddressPostalCode());
+
+        Country country = null;
+        ISOCountry isoCountry = null;
+        if (dto.getAddressCountryCode() != null) {
+            country = countryService.findCountryByAbbreviation(dto.getAddressCountryCode());
+            isoCountry = isoService.findISOCountryByAlpha2Code(dto.getAddressCountryCode());
+        }
+        if (country == null) {
+            LOG.warn("The given country from the response: " + dto.getAddressCountryCode() + " could not be found"
+                    + " as a country abbreviation in BLC_COUNTRY");
+        } else if (isoCountry == null) {
+            LOG.error("The given country from the response: " + dto.getAddressCountryCode() + " could not be found"
+                    + " as a country alpha-2 code in BLC_ISO_COUNTRY");
+        }
+
+        address.setCountry(country);
+        address.setIsoCountryAlpha2(isoCountry);
+
+        if (dto.getAddressPhone() != null) {
+            Phone billingPhone = phoneService.create();
+            billingPhone.setPhoneNumber(dto.getAddressPhone());
+            address.setPhonePrimary(billingPhone);
         }
     }
 
@@ -322,30 +323,45 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
         if (payment == null) {
             throw new IllegalArgumentException("Could not find payment with id " + orderPaymentId);
         }
-        orderPaymentService.delete(payment);
+        // Do not do an actual delete here, otherwise Hibernate will screw up the relationships by setting parent transactions
+        // to null because of the cascades. This manifests itself when you have an AUTHORIZE_AND_CAPTURE transaction and
+        // then an immediate VOID (like if there is an exception in the checkout workflow). The VOID transaction should
+        // have its parent set to the AUTHORIZE_AND_CAPTURE transaction which works up until we call Hibernate's delete
+        // on the payment. By cascading down to the transaction, Hibernate goes and removes the parentTransaction relationship
+        // from the VOID transaction
+        // The fix is to set archived statuses manually and not rely on Hibernate's @SqlDelete
+        payment.setArchived('Y');
+        for (PaymentTransaction transaction : payment.getTransactions()) {
+            transaction.setArchived('Y');
+        }
+        orderPaymentService.save(payment);
     }
 
-    //TODO: this should return something more than just a String
     @Override
     public String initiateCheckout(Long orderId) throws Exception{
-        Order order = orderService.findOrderById(orderId);
+        Order order = orderService.findOrderById(orderId, true);
         if (order == null || order instanceof NullOrderImpl) {
             throw new IllegalArgumentException("Could not order with id " + orderId);
         }
         
+        CheckoutResponse response;
+
         try {
-            CheckoutResponse response = checkoutService.performCheckout(order);
+            response = checkoutService.performCheckout(order);
         } catch (CheckoutException e) {
-            //TODO: wrap the exception or put CheckoutException in common
             throw new Exception(e);
         }
 
-        return order.getOrderNumber();
+        if (response.getOrder().getOrderNumber() == null) {
+            LOG.error("Order Number for Order ID: " + order.getId() + " is null.");
+        }
+
+        return response.getOrder().getOrderNumber();
     }
 
     @Override
     public String lookupOrderNumberFromOrderId(PaymentResponseDTO responseDTO) {
-        Order order = orderService.findOrderById(Long.parseLong(responseDTO.getOrderId()));
+        Order order = orderService.findOrderById(Long.parseLong(responseDTO.getOrderId()), true);
         if (order == null) {
             throw new IllegalArgumentException("An order with ID " + responseDTO.getOrderId() + " cannot be found for the" +
             		" given payment response.");

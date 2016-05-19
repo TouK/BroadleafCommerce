@@ -17,6 +17,7 @@
  * limitations under the License.
  * #L%
  */
+
 package org.broadleafcommerce.core.web.api.wrapper;
 
 import org.broadleafcommerce.profile.core.domain.Customer;
@@ -96,11 +97,51 @@ public class CustomerWrapper extends BaseWrapper implements APIWrapper<Customer>
         customer.setEmailAddress(this.emailAddress);
         if (customerAttributes != null) {
             for (CustomerAttributeWrapper customerAttributeWrapper : customerAttributes) {
-            CustomerAttribute attribute = customerAttributeWrapper.unwrap(request, context);
+                CustomerAttribute attribute = customerAttributeWrapper.unwrap(request, context);
                 attribute.setCustomer(customer);
-            customer.getCustomerAttributes().put(attribute.getName(), attribute);
-        }
+                customer.getCustomerAttributes().put(attribute.getName(), attribute);
+            }
         }
         return customer;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+
+    public String getEmailAddress() {
+        return emailAddress;
+    }
+
+    public void setEmailAddress(String emailAddress) {
+        this.emailAddress = emailAddress;
+    }
+
+    public List<CustomerAttributeWrapper> getCustomerAttributes() {
+        return customerAttributes;
+    }
+
+    public void setCustomerAttributes(List<CustomerAttributeWrapper> customerAttributes) {
+        this.customerAttributes = customerAttributes;
     }
 }
