@@ -23,23 +23,25 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.config.RuntimeEnvironmentKeyResolver;
+import org.broadleafcommerce.common.config.SystemPropertyRuntimeEnvironmentKeyResolver;
 import org.broadleafcommerce.common.logging.SupportLogManager;
 import org.broadleafcommerce.common.logging.SupportLogger;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.core.env.ConfigurablePropertyResolver;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
-import org.springframework.util.PropertyPlaceholderHelper;
 import org.springframework.util.StringValueResolver;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
-import java.util.Map.Entry;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -77,31 +79,31 @@ import java.util.Set;
  * property 'runtime.environment')
  * @author <a href="mailto:chris.lee.9@gmail.com">Chris Lee</a>
  */
-public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderConfigurer implements InitializingBean {
+public class RuntimeEnvironmentPropertiesConfigurer extends PropertySourcesPlaceholderConfigurer implements InitializingBean {
 
     private static final Log LOG = LogFactory.getLog(RuntimeEnvironmentPropertiesConfigurer.class);
     protected SupportLogger logger = SupportLogManager.getLogger("UserOverride", this.getClass());
-    
+
     protected static final String SHARED_PROPERTY_OVERRIDE = "property-shared-override";
     protected static final String PROPERTY_OVERRIDE = "property-override";
-    
-    protected static Set<String> defaultEnvironments = new LinkedHashSet<String>();
-    protected static Set<Resource> blcPropertyLocations = new LinkedHashSet<Resource>();
-    protected static Set<Resource> defaultPropertyLocations = new LinkedHashSet<Resource>();
-    
+
+    protected static Set<String> defaultEnvironments = new LinkedHashSet<>();
+    protected static Set<Resource> blcPropertyLocations = new LinkedHashSet<>();
+    protected static Set<Resource> defaultPropertyLocations = new LinkedHashSet<>();
+
     static {
         defaultEnvironments.add("production");
         defaultEnvironments.add("staging");
         defaultEnvironments.add("integrationqa");
         defaultEnvironments.add("integrationdev");
         defaultEnvironments.add("development");
-        
+
         blcPropertyLocations.add(new ClassPathResource("config/bc/"));
         blcPropertyLocations.add(new ClassPathResource("config/bc/admin/"));
         blcPropertyLocations.add(new ClassPathResource("config/bc/cms/"));
         blcPropertyLocations.add(new ClassPathResource("config/bc/web/"));
         blcPropertyLocations.add(new ClassPathResource("config/bc/fw/"));
-        
+
         defaultPropertyLocations.add(new ClassPathResource("runtime-properties/"));
     }
 
@@ -124,9 +126,9 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
         if (environments == null || environments.size() == 0) {
             environments = defaultEnvironments;
         }
-        
+
         // Prepend the default property locations to the specified property locations (if any)
-        Set<Resource> combinedLocations = new LinkedHashSet<Resource>();
+        Set<Resource> combinedLocations = new LinkedHashSet<>();
         if (!CollectionUtils.isEmpty(overridableProperyLocations)) {
             combinedLocations.addAll(overridableProperyLocations);
         }
@@ -135,7 +137,7 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
             combinedLocations.addAll(propertyLocations);
         }
         propertyLocations = combinedLocations;
-    
+
         if (!environments.contains(defaultEnvironment)) {
             throw new AssertionError("Default environment '" + defaultEnvironment + "' not listed in environment list");
         }
@@ -145,8 +147,8 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
         }
 
         String environment = determineEnvironment();
-        ArrayList<Resource> allLocations = new ArrayList<Resource>();
-        
+        ArrayList<Resource> allLocations = new ArrayList<>();
+
         /* Process configuration in the following order (later files override earlier files
          * common-shared.properties
          * [environment]-shared.properties
@@ -154,7 +156,7 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
          * [environment].properties
          * -Dproperty-override-shared specified value, if any
          * -Dproperty-override specified value, if any  */
-        Set<Set<Resource>> testLocations = new LinkedHashSet<Set<Resource>>();
+        Set<Set<Resource>> testLocations = new LinkedHashSet<>();
         testLocations.add(propertyLocations);
         testLocations.add(defaultPropertyLocations);
 
@@ -194,12 +196,12 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
         if (sharedPropertyOverride != null) {
             allLocations.add(sharedPropertyOverride);
         }
-        
+
         Resource propertyOverride = createOverrideResource();
         if (propertyOverride != null) {
             allLocations.add(propertyOverride);
         }
-        
+
         Properties props = new Properties();
         for (Resource resource : allLocations) {
             if (resource.exists()) {
@@ -208,7 +210,7 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
                         || LOG.isTraceEnabled()) {
                     props = new Properties(props);
                     props.load(resource.getInputStream());
-                    for (Entry<Object, Object> entry : props.entrySet()) {
+                    for (Map.Entry<Object, Object> entry : props.entrySet()) {
                         if (resource.equals(sharedPropertyOverride) || resource.equals(propertyOverride)) {
                             logger.support("Read " + entry.getKey() + " from " + resource.getFilename());
                         } else {
@@ -223,9 +225,9 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
 
         setLocations(allLocations.toArray(new Resource[] {}));
     }
-    
+
     protected Resource[] createSharedPropertiesResource(String environment, Set<Resource> locations) throws IOException {
-        String fileName = environment.toString().toLowerCase() + "-shared.properties";
+        String fileName = environment.toLowerCase() + "-shared.properties";
         Resource[] resources = new Resource[locations.size()];
         int index = 0;
         for (Resource resource : locations) {
@@ -234,7 +236,7 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
         }
         return resources;
     }
-    
+
     protected Resource[] createBroadleafResource() throws IOException {
         Resource[] resources = new Resource[blcPropertyLocations.size()];
         int index = 0;
@@ -256,7 +258,7 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
     }
 
     protected Resource[] createPropertiesResource(String environment, Set<Resource> locations) throws IOException {
-        String fileName = environment.toString().toLowerCase() + ".properties";
+        String fileName = environment.toLowerCase() + ".properties";
         Resource[] resources = new Resource[locations.size()];
         int index = 0;
         for (Resource resource : locations) {
@@ -275,12 +277,12 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
         }
         return resources;
     }
-    
+
     protected Resource createSharedOverrideResource() throws IOException {
         String path = System.getProperty(SHARED_PROPERTY_OVERRIDE);
         return StringUtils.isBlank(path) ? null : new FileSystemResource(path);
     }
-    
+
     protected Resource createOverrideResource() throws IOException {
         String path = System.getProperty(PROPERTY_OVERRIDE);
         return StringUtils.isBlank(path) ? null : new FileSystemResource(path);
@@ -301,9 +303,24 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
     }
 
     @Override
-    protected void processProperties(ConfigurableListableBeanFactory beanFactoryToProcess, Properties props) throws BeansException {
-        super.processProperties(beanFactoryToProcess, props);
-        stringValueResolver = new PlaceholderResolvingStringValueResolver(props);
+    protected void processProperties(ConfigurableListableBeanFactory beanFactoryToProcess,
+                                     final ConfigurablePropertyResolver propertyResolver) throws BeansException {
+
+        propertyResolver.setPlaceholderPrefix(this.placeholderPrefix);
+        propertyResolver.setPlaceholderSuffix(this.placeholderSuffix);
+        propertyResolver.setValueSeparator(this.valueSeparator);
+
+        this.stringValueResolver = new StringValueResolver() {
+            @Override
+            public String resolveStringValue(String strVal) {
+                String resolved = ignoreUnresolvablePlaceholders ?
+                        propertyResolver.resolvePlaceholders(strVal) :
+                        propertyResolver.resolveRequiredPlaceholders(strVal);
+                return (resolved.equals(nullValue) ? null : resolved);
+            }
+        };
+
+        doProcessProperties(beanFactoryToProcess, stringValueResolver);
     }
 
     /**
@@ -346,36 +363,6 @@ public class RuntimeEnvironmentPropertiesConfigurer extends PropertyPlaceholderC
      */
     public void setOverridableProperyLocations(Set<Resource> overridableProperyLocations) {
         this.overridableProperyLocations = overridableProperyLocations;
-    }
-
-    private class PlaceholderResolvingStringValueResolver implements StringValueResolver {
-
-        private final PropertyPlaceholderHelper helper;
-
-        private final PropertyPlaceholderHelper.PlaceholderResolver resolver;
-
-        public PlaceholderResolvingStringValueResolver(Properties props) {
-            this.helper = new PropertyPlaceholderHelper("${", "}", ":", true);
-            this.resolver = new PropertyPlaceholderConfigurerResolver(props);
-        }
-
-        public String resolveStringValue(String strVal) throws BeansException {
-            String value = this.helper.replacePlaceholders(strVal, this.resolver);
-            return (value.equals("") ? null : value);
-        }
-    }
-
-    private class PropertyPlaceholderConfigurerResolver implements PropertyPlaceholderHelper.PlaceholderResolver {
-
-        private final Properties props;
-
-        private PropertyPlaceholderConfigurerResolver(Properties props) {
-            this.props = props;
-        }
-
-        public String resolvePlaceholder(String placeholderName) {
-            return RuntimeEnvironmentPropertiesConfigurer.this.resolvePlaceholder(placeholderName, props, 1);
-        }
     }
 
     public StringValueResolver getStringValueResolver() {
