@@ -65,6 +65,7 @@ import org.broadleafcommerce.openadmin.web.form.entity.Tab;
 import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.propertyeditors.StringTrimmerEditor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.MultiValueMap;
@@ -105,6 +106,7 @@ import javax.servlet.http.HttpServletResponse;
  */
 @Controller("blAdminBasicEntityController")
 @RequestMapping("/{sectionKey:.+}")
+@Lazy
 public class AdminBasicEntityController extends AdminAbstractController {
     protected static final Log LOG = LogFactory.getLog(AdminBasicEntityController.class);
 

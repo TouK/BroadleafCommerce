@@ -39,6 +39,7 @@ import org.broadleafcommerce.openadmin.web.form.entity.EntityForm;
 import org.broadleafcommerce.openadmin.web.form.entity.Field;
 import org.broadleafcommerce.openadmin.web.service.TranslationFormAction;
 import org.broadleafcommerce.openadmin.web.service.TranslationFormBuilderService;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -57,6 +58,7 @@ import javax.servlet.http.HttpServletResponse;
 
 @Controller("blAdminTranslationController")
 @RequestMapping("/translation")
+@Lazy
 public class AdminTranslationController extends AdminAbstractController {
 
     @Resource(name = "blTranslationService")

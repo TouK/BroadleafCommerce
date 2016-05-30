@@ -76,6 +76,7 @@ import org.broadleafcommerce.openadmin.web.form.entity.Field;
 import org.broadleafcommerce.openadmin.web.rulebuilder.DataDTODeserializer;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataWrapper;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.Version;
@@ -104,6 +105,7 @@ import javax.persistence.OneToOne;
  * @author Andre Azzolini (apazzolini)
  */
 @Service("blFormBuilderService")
+@Lazy
 public class FormBuilderServiceImpl implements FormBuilderService {
 
     private static final Log LOG = LogFactory.getLog(FormBuilderServiceImpl.class);

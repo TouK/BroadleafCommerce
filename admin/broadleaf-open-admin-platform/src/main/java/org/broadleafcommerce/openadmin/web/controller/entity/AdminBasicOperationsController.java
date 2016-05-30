@@ -35,6 +35,7 @@ import org.broadleafcommerce.openadmin.web.controller.AdminAbstractController;
 import org.broadleafcommerce.openadmin.web.form.component.ListGrid;
 import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
 import org.broadleafcommerce.openadmin.web.service.SearchFieldResolver;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.MultiValueMap;
@@ -59,6 +60,7 @@ import javax.servlet.http.HttpServletResponse;
  * @author Andre Azzolini (apazzolini)
  */
 @Controller("blAdminBasicOperationsController")
+@Lazy
 public class AdminBasicOperationsController extends AdminAbstractController {
 
     @Resource(name = "blSearchFieldResolver")

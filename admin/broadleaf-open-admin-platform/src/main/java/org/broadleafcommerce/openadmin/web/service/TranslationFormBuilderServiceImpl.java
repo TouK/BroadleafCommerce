@@ -36,6 +36,7 @@ import org.broadleafcommerce.openadmin.web.form.entity.DefaultEntityFormActions;
 import org.broadleafcommerce.openadmin.web.form.entity.EntityForm;
 import org.broadleafcommerce.openadmin.web.form.entity.EntityFormAction;
 import org.broadleafcommerce.openadmin.web.form.entity.Field;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ import java.util.Map;
 import javax.annotation.Resource;
 
 @Service("blTranslationFormBuilderService")
+@Lazy
 public class TranslationFormBuilderServiceImpl implements TranslationFormBuilderService {
 
     @Resource(name = "blFormBuilderService")
