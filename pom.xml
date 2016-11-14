@@ -333,14 +333,12 @@
     </dependencies>
     <distributionManagement>
         <repository>
-            <id>touk.nexus.release</id>
-            <name>TouK Release Repository</name>
-            <url>http://nexus.touk.pl/nexus/content/repositories/releases</url>
+            <id>touk.philanthropist</id>
+            <url>https://philanthropist.touk.pl/nexus/content/repositories/releases</url>
         </repository>
         <snapshotRepository>
-            <id>touk.nexus.snapshots</id>
-            <name>TouK SNAPSHOT Repository</name>
-            <url>http://nexus.touk.pl/nexus/content/repositories/snapshots</url>
+            <id>touk.philanthropist</id>
+            <url>https://philanthropist.touk.pl/nexus/content/repositories/snapshots</url>
         </snapshotRepository>
     </distributionManagement>
     <profiles>
@@ -385,7 +383,7 @@
                                     <goal>sign</goal>
                                 </goals>
                                 <configuration>
-                                    <keyname>info@broadleafcommerce.org</keyname>
+                                    <keyname>TouK PL</keyname>
                                 </configuration>
                             </execution>
                         </executions>
