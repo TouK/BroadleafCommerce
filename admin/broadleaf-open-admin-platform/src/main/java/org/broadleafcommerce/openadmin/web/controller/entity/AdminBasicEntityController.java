@@ -53,6 +53,7 @@ import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationTyp
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceResponse;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.BasicPersistenceModule;
 import org.broadleafcommerce.openadmin.web.controller.AdminAbstractController;
+import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
 import org.broadleafcommerce.openadmin.web.editor.NonNullBooleanEditor;
 import org.broadleafcommerce.openadmin.web.form.component.DefaultListGridActions;
 import org.broadleafcommerce.openadmin.web.form.component.ListGrid;
@@ -62,7 +63,6 @@ import org.broadleafcommerce.openadmin.web.form.entity.EntityForm;
 import org.broadleafcommerce.openadmin.web.form.entity.EntityFormAction;
 import org.broadleafcommerce.openadmin.web.form.entity.Field;
 import org.broadleafcommerce.openadmin.web.form.entity.Tab;
-import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.propertyeditors.StringTrimmerEditor;
 import org.springframework.context.annotation.Lazy;
@@ -145,6 +145,11 @@ public class AdminBasicEntityController extends AdminAbstractController {
         DynamicResultSet drs =  service.getRecords(ppr).getDynamicResultSet();
 
         ListGrid listGrid = formService.buildMainListGrid(drs, cmd, sectionKey, crumbs);
+        
+        if (CollectionUtils.isEmpty(listGrid.getHeaderFields())) {
+            throw new IllegalStateException("At least 1 field must be set to prominent to display in a main grid");
+        }
+        
         List<EntityFormAction> mainActions = new ArrayList<EntityFormAction>();
         addAddActionIfAllowed(sectionClassName, cmd, mainActions);
         extensionManager.getProxy().addAdditionalMainActions(sectionClassName, mainActions);
@@ -368,11 +373,11 @@ public class AdminBasicEntityController extends AdminAbstractController {
         setModelAttributes(model, sectionKey);
         
         if (sandBoxHelper.isSandBoxable(entityForm.getEntityType())) {
-            Tab auditTab = new Tab();
-            auditTab.setTitle("Audit");
-            auditTab.setOrder(Integer.MAX_VALUE);
-            auditTab.setTabClass("audit-tab");
-            entityForm.getTabs().add(auditTab);
+            Tab changeHistoryTab = new Tab();
+            changeHistoryTab.setTitle("Change History");
+            changeHistoryTab.setOrder(Integer.MAX_VALUE);
+            changeHistoryTab.setTabClass("change-history-tab");
+            entityForm.getTabs().add(changeHistoryTab);
         }
 
         if (isAjaxRequest(request)) {
